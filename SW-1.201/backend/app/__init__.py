@@ -16,7 +16,14 @@ def create_app():
     # 허용 오리진은 환경설정의 CORS_ORIGINS를 사용
     CORS(
         app,
-        resources={r"/api/*": {"origins": app.config.get('CORS_ORIGINS', ['http://localhost:5173'])}},
+        resources={
+        r"/api/*": {
+            "origins": [
+                "http://localhost:5173",  # Vite 기본 포트
+                "http://localhost:3000"   # React 기본 포트
+            ]
+        }
+    },
         supports_credentials=False,
     )
     
@@ -26,6 +33,9 @@ def create_app():
     
     # 라우트 등록
     from app.routes import search_routes
+    from app.routes import llm_routes
     app.register_blueprint(search_routes.bp)
+    app.register_blueprint(search_routes.tools_bp)
+    app.register_blueprint(llm_routes.bp)
     
     return app

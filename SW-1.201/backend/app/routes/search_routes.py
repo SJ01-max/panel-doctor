@@ -1,7 +1,10 @@
-"""패널 검색 관련 라우트"""
+"""패널 검색 관련 라우트 및 툴 라우트"""
 from flask import Blueprint, request, jsonify
 from app.services.query_parser import QueryParser
 from app.services.panel_service import PanelService
+from app.services.sql_service import execute_sql_safe
+from app.config import Config
+import traceback
 
 
 bp = Blueprint('search', __name__, url_prefix='/api/panel')
@@ -40,5 +43,40 @@ def get_dashboard():
         
         return jsonify(dashboard_data), 200
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# 공용 툴 엔드포인트 (LLM이 프록시로 호출)
+tools_bp = Blueprint('tools', __name__, url_prefix='/api/tools')
+
+
+@tools_bp.route('/ping', methods=['GET'])
+def tool_ping():
+    return jsonify({"ok": True, "message": "tools blueprint alive"}), 200
+
+
+@tools_bp.route('/execute_sql', methods=['POST'])
+def tool_execute_sql():
+    try:
+        data = request.get_json(force=True) or {}
+        query = data.get('query', '')
+        params = data.get('params', {})
+        limit = int(data.get('limit', 200))
+        timeout_ms = int(data.get('statement_timeout_ms', 5000))
+
+        rows = execute_sql_safe(query=query, params=params, limit=limit, statement_timeout_ms=timeout_ms)
+        return jsonify({
+            'rows': rows,
+            'count': len(rows),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'type': type(e).__name__, 'traceback': traceback.format_exc()}), 400
+
+
+@tools_bp.route('/db_config', methods=['GET'])
+def tool_db_config():
+    try:
+        return jsonify(Config.get_db_config()), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
