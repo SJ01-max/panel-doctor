@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# 환경 변수
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Flask
+instance/
+.webassets-cache
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 로그
+*.log
