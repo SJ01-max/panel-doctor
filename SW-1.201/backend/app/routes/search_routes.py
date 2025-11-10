@@ -80,3 +80,76 @@ def tool_db_config():
         return jsonify(Config.get_db_config()), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@tools_bp.route('/db_schema', methods=['GET'])
+def tool_db_schema():
+    """DB 스키마 및 테이블별 상세 정보 조회 (모든 스키마 포함)"""
+    try:
+        # 모든 스키마의 테이블 목록 조회 (public, core, staging 등)
+        tables = execute_sql_safe(
+            query=(
+                "SELECT t.table_schema, t.table_name, "
+                "(SELECT COUNT(*) FROM information_schema.columns "
+                " WHERE table_schema=t.table_schema AND table_name=t.table_name) AS column_count, "
+                "COALESCE((SELECT COUNT(*) FROM information_schema.table_constraints "
+                " WHERE table_schema=t.table_schema AND table_name=t.table_name "
+                " AND constraint_type='PRIMARY KEY'), 0) AS has_pk "
+                "FROM information_schema.tables t "
+                "WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast') "
+                "  AND t.table_type='BASE TABLE' "
+                "ORDER BY t.table_schema, t.table_name"
+            ),
+            limit=100,
+        )
+        
+        result = {
+            'tables': [],
+        }
+        
+        for tbl in tables:
+            schema_name = tbl['table_schema']
+            tbl_name = tbl['table_name']
+            full_table_name = f"{schema_name}.{tbl_name}"
+            
+            try:
+                # 실제 데이터 건수 (스키마 포함)
+                count_row = execute_sql_safe(
+                    query=f'SELECT COUNT(*) AS cnt FROM "{schema_name}"."{tbl_name}"',
+                    limit=1,
+                )
+                row_count = int(count_row[0]['cnt']) if count_row else 0
+                
+                # 컬럼 목록
+                cols = execute_sql_safe(
+                    query=(
+                        "SELECT column_name, data_type, is_nullable "
+                        "FROM information_schema.columns "
+                        "WHERE table_schema=%(schema)s AND table_name=%(tbl)s "
+                        "ORDER BY ordinal_position"
+                    ),
+                    params={"schema": schema_name, "tbl": tbl_name},
+                    limit=200,
+                )
+                
+                result['tables'].append({
+                    'schema': schema_name,
+                    'name': tbl_name,
+                    'full_name': full_table_name,
+                    'row_count': row_count,
+                    'column_count': int(tbl.get('column_count', 0)),
+                    'has_pk': bool(tbl.get('has_pk', 0)),
+                    'columns': cols,
+                })
+            except Exception as e:
+                result['tables'].append({
+                    'schema': schema_name,
+                    'name': tbl_name,
+                    'full_name': full_table_name,
+                    'row_count': None,
+                    'error': str(e),
+                })
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
