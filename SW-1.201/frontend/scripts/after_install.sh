@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+echo "[AfterInstall] 📦 Installing frontend dependencies..."
+
+cd /home/ec2-user/app
+
+if [ -f "package.json" ]; then
+  echo "[AfterInstall] Running npm install..."
+  npm install --omit=dev
+  echo "[AfterInstall] ✅ npm install complete."
+else
+  echo "[AfterInstall] ⚠️ package.json not found in $(pwd). Skipping npm install."
+fi

@@ -1,0 +1,21 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20     # ✅ Node 20으로 명시 (Firebase + Vite 요구사항)
+    commands:
+      - echo "Installing dependencies..."
+      - cd SW-1.201/frontend
+      - npm ci || npm install
+      - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 포함)
+
+  build:
+    commands:
+      - echo "🚀 Building React (Vite) app..."
+      - npm run build
+
+artifacts:
+  base-directory: SW-1.201/frontend/dist
+  files:
+    - '**/*'
