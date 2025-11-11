@@ -25,8 +25,9 @@ phases:
       - ls -al out || echo "⚠️ out 폴더가 존재하지 않습니다. 빌드 실패 가능성 확인 필요!"
 
 artifacts:
-  # ✅ 실제 폴더 구조 반영
+  base-directory: SW-1.201/frontend
   files:
-    - SW-1.201/frontend/appspec.yml       # appspec.yml 포함
-    - SW-1.201/frontend/scripts/**/*      # scripts 전체 포함
-    - SW-1.201/frontend/out/**            # 빌드 결과물 포함
+    - appspec.yml
+    - scripts/**/*
+    - out/**/*
+  discard-paths: yes           # 빌드 결과물 포함
