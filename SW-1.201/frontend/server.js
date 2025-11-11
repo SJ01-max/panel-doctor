@@ -6,7 +6,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const distPath = path.join(__dirname, "dist");
+const distPath = path.join(__dirname, "out");
 app.use(express.static(distPath));
 
 app.get(/.*/, (req, res) => {

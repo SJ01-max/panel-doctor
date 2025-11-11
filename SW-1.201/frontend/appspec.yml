@@ -15,24 +15,24 @@ permissions:
 
 hooks:
   BeforeInstall:
-    - location: before_install.sh
+    - location: scripts/before_install.sh
       timeout: 300
       runas: ec2-user
 
   AfterInstall:
-    - location: after_install.sh
+    - location: scripts/after_install.sh
       timeout: 600
       runas: ec2-user
-    - location: fix_permissions.sh     # ✅ 추가
+    - location: scripts/fix_permissions.sh     # ✅ 추가
       timeout: 60
       runas: root                                       # ✅ root 권한으로 소유권 복구
 
   ApplicationStart:
-    - location: start_all.sh
+    - location: scripts/start_all.sh
       timeout: 600
       runas: ec2-user
 
   ApplicationStop:
-    - location: stop_all.sh
+    - location: scripts/stop_all.sh
       timeout: 300
       runas: ec2-user
