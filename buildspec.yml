@@ -13,6 +13,7 @@ phases:
   build:
     commands:
       - echo "🚀 Building React (Vite) app..."
+       - echo "VITE_API_BASE_URL=http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com:5000" > .env
       - npm run build
 
 artifacts:
