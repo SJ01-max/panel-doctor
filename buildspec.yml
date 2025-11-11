@@ -20,7 +20,6 @@ phases:
   post_build:
     commands:
       - echo "✅ Build completed successfully!"
-      - ls -al dist || echo "⚠️ dist folder not found!"   # 👀 dist 생성 확인용
 
 artifacts:
   base-directory: SW-1.201/frontend/out
