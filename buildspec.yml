@@ -23,6 +23,6 @@ phases:
       - ls -al dist || echo "⚠️ dist folder not found!"   # 👀 dist 생성 확인용
 
 artifacts:
-  base-directory: SW-1.201/frontend/dist
+  base-directory: SW-1.201/frontend/out
   files:
     - '**/*'
