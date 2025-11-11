@@ -7,6 +7,7 @@ phases:
     commands:
       - echo "📦 Installing dependencies..."
       - cd SW-1.201/frontend
+      - sudo chown -R ec2-user:ec2-user /home/ec2-user/app || true   # ✅ 소유권 보정
       - npm ci || npm install
       - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 등)
 

@@ -13,6 +13,6 @@ if [ ! -d "/home/ec2-user/app/backend/logs" ]; then
 fi
 
 # ✅ Gunicorn 실행 (main.py 내부의 app 객체)
-nohup gunicorn --workers 3 --bind 0.0.0.0:5000 main:app > /home/ec2-user/app/backend/logs/server.log 2>&1 &
+nohup /home/ec2-user/.local/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 main:app > logs/server.log 2>&1 &
 
 echo "[ApplicationStart] ✅ Gunicorn server started on port 5000."

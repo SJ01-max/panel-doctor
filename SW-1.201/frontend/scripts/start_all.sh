@@ -4,6 +4,13 @@ echo "[ApplicationStart] 🚀 Starting Express server for built frontend..."
 
 cd /home/ec2-user/app
 
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm use 20
+
+# ✅ 권한 보정
+sudo chown -R ec2-user:ec2-user /home/ec2-user
+
 # 기존 vite나 node 프로세스 종료
 VITE_PID=$(pgrep -f "vite" || true)
 NODE_PID=$(pgrep -f "node server.js" || true)
@@ -18,7 +25,8 @@ if [ -n "$NODE_PID" ]; then
   kill -9 $NODE_PID || true
 fi
 
-# 백그라운드에서 Express 서버 실행
-nohup node server.js > /home/ec2-user/frontend.log 2>&1 &
+# ✅ 절대경로 기반 Node 실행
+NODE_BIN=$(which node)
+nohup $NODE_BIN server.js > /home/ec2-user/frontend.log 2>&1 &
 
 echo "[ApplicationStart] ✅ Express server started on port 3000."
