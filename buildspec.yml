@@ -3,18 +3,24 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 20     # ✅ Node 20으로 명시 (Firebase + Vite 요구사항)
+      nodejs: 20     # ✅ Node 20 사용
     commands:
-      - echo "Installing dependencies..."
+      - echo "📦 Installing dependencies..."
       - cd SW-1.201/frontend
       - npm ci || npm install
-      - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 포함)
+      - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 등)
 
   build:
     commands:
       - echo "🚀 Building React (Vite) app..."
-       - echo "VITE_API_BASE_URL=http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com:5000" > .env
+      - echo "VITE_API_BASE_URL=http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com:5000" > .env
+      - cat .env   # 👀 디버깅용: 실제 .env 내용 확인
       - npm run build
+
+  post_build:
+    commands:
+      - echo "✅ Build completed successfully!"
+      - ls -al dist || echo "⚠️ dist folder not found!"   # 👀 dist 생성 확인용
 
 artifacts:
   base-directory: SW-1.201/frontend/dist
