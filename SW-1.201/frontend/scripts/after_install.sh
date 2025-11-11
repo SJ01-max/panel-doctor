@@ -4,6 +4,11 @@ echo "[AfterInstall] 📦 Installing frontend dependencies..."
 
 cd /home/ec2-user/app
 
+sudo chown -R ec2-user:ec2-user /home/ec2-user/app
+sudo chmod -R 755 /home/ec2-user/app
+
+sudo rm -rf /home/ec2-user/app/node_modules
+
 # ✅ nvm 환경 로드 (CodeDeploy 환경용)
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
