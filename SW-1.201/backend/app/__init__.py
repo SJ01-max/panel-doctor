@@ -17,7 +17,8 @@ def create_app():
         r"/api/*": {
             "origins": [
                 "http://localhost:5173",  # Vite 기본 포트
-                "http://localhost:3000"   # React 기본 포트
+                "http://localhost:3000",   # React 기본 포트
+                "http://capstone-alb-528635803.ap-northeast-2.elb.amazonaws.com"
             ]
         }
     },
