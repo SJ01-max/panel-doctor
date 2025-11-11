@@ -14,6 +14,13 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm use 20
 
+if ! grep -q '"http-proxy-middleware"' package.json; then
+  echo "[AfterInstall] ⚙️ http-proxy-middleware not found in package.json. Installing it..."
+  npm install http-proxy-middleware --save
+else
+  echo "[AfterInstall] ✅ http-proxy-middleware already defined in package.json."
+fi
+
 if [ -f "package.json" ]; then
   echo "[AfterInstall] Running npm install..."
   npm install express
