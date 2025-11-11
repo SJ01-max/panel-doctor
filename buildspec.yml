@@ -14,7 +14,7 @@ phases:
     commands:
       - echo "🚀 Building React (Vite) app..."
       # ✅ API URL 환경 변수 생성
-      - echo "VITE_API_BASE_URL=http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com:5000" > .env
+      - echo "VITE_API_BASE_URL=/api" > .env
       - cat .env   # 👀 디버깅용 출력
       - npm run build
       - echo "✅ Build completed successfully!"
