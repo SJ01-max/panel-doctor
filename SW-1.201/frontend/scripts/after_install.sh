@@ -16,6 +16,7 @@ nvm use 20
 
 if [ -f "package.json" ]; then
   echo "[AfterInstall] Running npm install..."
+  npm install express
   npm install --omit=dev
   echo "[AfterInstall] ✅ npm install complete."
 else

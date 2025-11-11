@@ -31,4 +31,4 @@ artifacts:
     - scripts/**/*
     - out/**/*
     - server.js
-  discard-paths: yes           # 빌드 결과물 포함
+  # discard-paths: yes           # 빌드 결과물 포함
