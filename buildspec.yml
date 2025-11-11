@@ -3,26 +3,30 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 20     # ✅ Node 20 사용
+      nodejs: 20   # ✅ Node 20 사용
     commands:
       - echo "📦 Installing dependencies..."
       - cd SW-1.201/frontend
-      - sudo chown -R ec2-user:ec2-user /home/ec2-user/app || true   # ✅ 소유권 보정
       - npm ci || npm install
-      - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 등)
+      - chmod -R 755 node_modules/.bin || true   # ✅ 실행 권한 부여 (Vite 등)
 
   build:
     commands:
       - echo "🚀 Building React (Vite) app..."
+      # ✅ API URL 환경 변수 생성
       - echo "VITE_API_BASE_URL=http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com:5000" > .env
-      - cat .env   # 👀 디버깅용: 실제 .env 내용 확인
+      - cat .env   # 👀 디버깅용 출력
       - npm run build
+      - echo "✅ Build completed successfully!"
 
   post_build:
     commands:
-      - echo "✅ Build completed successfully!"
+      - echo "📦 Packaging deployment artifacts..."
+      - ls -al out || echo "⚠️ out 폴더가 존재하지 않습니다. 빌드 실패 가능성 확인 필요!"
 
 artifacts:
-  base-directory: SW-1.201/frontend/out
+  # ✅ frontend 내부의 appspec.yml 및 scripts 포함
   files:
-    - '**/*'
+    - frontend/appspec.yml           # appspec.yml 포함
+    - frontend/scripts/**/*          # scripts 전체 포함
+    - SW-1.201/frontend/out/**       # 빌드된 결과물 포함
