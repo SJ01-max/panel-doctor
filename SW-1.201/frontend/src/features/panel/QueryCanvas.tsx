@@ -4,6 +4,7 @@ import Button from '../../components/base/Button';
 import Badge from '../../components/base/Badge';
 import Chip from '../../components/base/Chip';
 import { searchPanels } from '../../api/panel';
+import { sqlSearch, type LlmSqlResponse } from '../../api/llm';
 import type { PanelSearchResult } from '../../types/panel';
 
 export default function QueryCanvas() {
@@ -11,6 +12,7 @@ export default function QueryCanvas() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<PanelSearchResult | null>(null);
+  const [llm, setLlm] = useState<LlmSqlResponse | null>(null);
 
   const handleQuerySubmit = async () => {
     if (!query.trim() || isLoading) return;
@@ -20,8 +22,12 @@ export default function QueryCanvas() {
     setResults(null);
 
     try {
-      const apiResponse = await searchPanels(query);
-      setResults(apiResponse);
+      const [apiResponse, llmResponse] = await Promise.all([
+        searchPanels(query).catch(() => null as any),
+        sqlSearch(query).catch(() => null as any),
+      ]);
+      if (apiResponse) setResults(apiResponse);
+      if (llmResponse) setLlm(llmResponse);
     } catch (err: any) {
       setError(err.message || '질의 처리 중 오류가 발생했습니다.');
     } finally {
@@ -159,6 +165,41 @@ export default function QueryCanvas() {
               </div>
             </Card>
           </div>
+        </>
+      )}
+
+      {llm && (
+        <>
+          <Card>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">LLM 답변</h2>
+            <div className="text-gray-800 whitespace-pre-wrap">{llm.answer}</div>
+          </Card>
+
+          {llm.rows && llm.rows.length > 0 && (
+            <Card>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">LLM 미리보기 행</h2>
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b">
+                      {Object.keys(llm.rows[0]).map((k) => (
+                        <th key={k} className="py-2 pr-6 text-gray-600">{k}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {llm.rows.slice(0, 10).map((row, idx) => (
+                      <tr key={idx} className="border-b">
+                        {Object.keys(llm.rows![0]).map((k) => (
+                          <td key={k} className="py-2 pr-6 text-gray-800">{String((row as any)[k])}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </>
       )}
     </div>

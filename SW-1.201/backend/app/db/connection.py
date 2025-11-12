@@ -21,6 +21,7 @@ def get_db_connection() -> connection:
         try:
             # 연결 풀 생성 (개별 파라미터 사용)
             # 타임아웃을 길게 설정 (원격 연결 시 필요)
+            
             _connection_pool = pool.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=20,
@@ -33,7 +34,7 @@ def get_db_connection() -> connection:
             )
             
             # 연결 풀 생성 성공
-            print(f"✅ 데이터베이스 연결 풀 생성: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+            print(f"[성공] 데이터베이스 연결 풀 생성: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             
             # 초기 연결에서 클라이언트 인코딩을 UTF8로 설정
             test_conn = _connection_pool.getconn()
@@ -56,7 +57,7 @@ def get_db_connection() -> connection:
                 _connection_pool.putconn(test_conn)
                 
         except Exception as e:
-            print(f"❌ 데이터베이스 연결 실패: {e}")
+            print(f"[실패] 데이터베이스 연결 실패: {e}")
             raise
     
     # 연결 가져오기

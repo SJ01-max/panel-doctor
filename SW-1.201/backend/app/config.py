@@ -16,15 +16,15 @@ class Config:
     # 방법 2: 개별 설정 값 사용 (DBeaver 연결 정보와 동일하게 설정)
     DB_HOST = os.environ.get('DB_HOST', 'localhost')
     DB_PORT = int(os.environ.get('DB_PORT', 5432))
-    DB_NAME = os.environ.get('DB_NAME', 'panel_db')
+    DB_NAME = os.environ.get('DB_NAME', 'postgres')
     DB_USER = os.environ.get('DB_USER', 'postgres')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', 'password')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', '1124')
     
     # API 설정
     API_PREFIX = '/api'
     
-    # CORS 설정
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173').split(',')
+    # CORS 설정 (기본: Vite 5173, 추가로 3000도 허용)
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000').split(',')
     
     @classmethod
     def get_db_config(cls):

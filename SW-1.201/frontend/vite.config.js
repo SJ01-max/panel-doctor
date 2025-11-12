@@ -78,5 +78,9 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0',
+    allowedHosts: [
+      'capstone-alb-528635803.ap-northeast-2.elb.amazonaws.com', // ✅ ALB DNS 이름
+      'localhost'           // ✅ 로컬 개발 시 허용
+    ],
   }
 })

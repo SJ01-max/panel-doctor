@@ -2,31 +2,22 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-env/
+.venv/
 venv/
 ENV/
-.venv
+env/
 
-# 환경 변수
+# Environment
 .env
 .env.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # Flask
 instance/
 .webassets-cache
 
-# 테스트
+# Logs
+*.log
+
+# Testing
 .pytest_cache/
 .coverage
-htmlcov/
-
-# 로그
-*.log
