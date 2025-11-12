@@ -1,6 +1,6 @@
 """애플리케이션 설정"""
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 
 class Config:
@@ -53,8 +53,9 @@ class Config:
             parsed = urlparse(db_url)
             
             # 사용자명과 비밀번호가 URL에 없으면 환경 변수의 개별 값 사용
-            user = parsed.username if parsed.username else cls.DB_USER
-            password = parsed.password if parsed.password else cls.DB_PASSWORD
+            user = unquote(parsed.username) if parsed.username else cls.DB_USER
+            # URL 인코딩된 비밀번호 디코딩
+            password = unquote(parsed.password) if parsed.password else cls.DB_PASSWORD
             
             return {
                 'host': parsed.hostname or cls.DB_HOST,
