@@ -3,32 +3,19 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 20   # ✅ Node 20 사용
+      nodejs: 20     # ✅ Node 20으로 명시 (Firebase + Vite 요구사항)
     commands:
-      - echo "📦 Installing dependencies..."
+      - echo "Installing dependencies..."
       - cd SW-1.201/frontend
       - npm ci || npm install
-      - chmod -R 755 node_modules/.bin || true   # ✅ 실행 권한 부여 (Vite 등)
+      - chmod -R 755 node_modules/.bin || true   # ✅ 실행권한 부여 (Vite 포함)
 
   build:
     commands:
       - echo "🚀 Building React (Vite) app..."
-      # ✅ API URL 환경 변수 생성
-      - echo "VITE_API_BASE_URL=/api" > .env
-      - cat .env   # 👀 디버깅용 출력
       - npm run build
-      - echo "✅ Build completed successfully!"
-
-  post_build:
-    commands:
-      - echo "📦 Packaging deployment artifacts..."
-      - ls -al out || echo "⚠️ out 폴더가 존재하지 않습니다. 빌드 실패 가능성 확인 필요!"
 
 artifacts:
-  base-directory: SW-1.201/frontend
+  base-directory: SW-1.201/frontend/dist
   files:
-    - appspec.yml
-    - scripts/**/*
-    - out/**/*
-    - server.js
-  # discard-paths: yes           # 빌드 결과물 포함
+    - '**/*'
