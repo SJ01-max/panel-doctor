@@ -14,11 +14,11 @@ class Config:
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
     # 방법 2: 개별 설정 값 사용 (DBeaver 연결 정보와 동일하게 설정)
-    DB_HOST = os.environ.get('DB_HOST', 'localhost')
+    DB_HOST = os.environ.get('DB_HOST', 'database.c3gymesumce0.ap-northeast-2.rds.amazonaws.com')
     DB_PORT = int(os.environ.get('DB_PORT', 5432))
     DB_NAME = os.environ.get('DB_NAME', 'postgres')
     DB_USER = os.environ.get('DB_USER', 'postgres')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', '1124')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', '7E!JyS6B9I791<nXTtO0?E6#6~i[')
     
     # API 설정
     API_PREFIX = '/api'
