@@ -1,20 +1,29 @@
 """애플리케이션 설정"""
 import os
 from urllib.parse import urlparse, unquote
-
+from app.utils.secret_loader import load_secret
 
 class Config:
     """기본 설정"""
+    SECRET_NAME = os.environ.get("AWS_SECRET_NAME", "/panel-doctor/panel1.0/backend")
+    AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
+    try:
+        secrets = load_secret(SECRET_NAME, AWS_REGION)
+    except Exception:
+        secrets = {}  # 로컬 환경 fallback
+
     # 데이터베이스 설정
     # 방법 1: DATABASE_URL 사용 (우선순위 높음)
     # 예: postgresql://user:password@localhost:5432/dbname
     # 예: jdbc:postgresql://localhost:5432/Retail (JDBC 형식도 지원)
-    DATABASE_URL = os.environ.get('DATABASE_URL')
+    DATABASE_URL = secrets.get("DATABASE_URL")  # ⭐ DB 전체 URL (비밀)
+    _db_password_raw = secrets.get("DB_PASSWORD", "")
+    DB_PASSWORD = _db_password_raw.strip('"').strip("'") if _db_password_raw else ""
     
     # 방법 2: 개별 설정 값 사용 (DBeaver 연결 정보와 동일하게 설정)
-    DB_HOST = os.environ.get('DB_HOST', 'localhost')
+    DB_HOST = os.environ.get('DB_HOST', 'database.c3gymesumce0.ap-northeast-2.rds.amazonaws.com')
     DB_PORT = int(os.environ.get('DB_PORT', 5432))
     DB_NAME = os.environ.get('DB_NAME', 'postgres')
     DB_USER = os.environ.get('DB_USER', 'postgres')

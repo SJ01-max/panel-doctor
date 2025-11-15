@@ -11,7 +11,20 @@ def create_app():
     app = Flask(__name__)
     
     # CORS 설정: 환경설정의 CORS_ORIGINS 값을 사용 (쉼표로 분리된 목록)
-    CORS(app, resources={r"/api/*": {"origins": Config.CORS_ORIGINS}}, supports_credentials=False)
+    CORS(
+        app,
+        resources={
+        r"/api/*": {
+            "origins": [
+                "http://localhost:5173",  # Vite 기본 포트
+                "http://localhost:3000",   # React 기본 포트
+                "http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com",
+                "http://capstone-alb-528635803.ap-northeast-2.elb.amazonaws.com"
+            ]
+        }
+    },
+        supports_credentials=False,
+    )
 
     # 설정 로드
     app.config.from_object('app.config')

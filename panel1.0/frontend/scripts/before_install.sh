@@ -2,6 +2,10 @@
 set -e
 echo "[BeforeInstall] 🔍 Checking Node.js environment..."
 
+# ✅ 권한 재설정
+sudo chown -R ec2-user:ec2-user /home/ec2-user/app
+sudo chmod -R 755 /home/ec2-user/app
+
 # ✅ nvm 환경 로드 강제
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"

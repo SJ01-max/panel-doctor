@@ -16,7 +16,7 @@ phases:
       - echo "Backend build completed successfully."
 
 artifacts:
-  base-directory: SW-1.201/backend
+  base-directory: panel1.0/backend
   files:
     - appspec.yml
     - scripts/**/*
