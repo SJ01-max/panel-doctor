@@ -283,5 +283,3 @@ class LlmService:
         models = self.client.models.list()
         names = [m.id for m in getattr(models, 'data', [])]
         return {"models": names}
-
-
