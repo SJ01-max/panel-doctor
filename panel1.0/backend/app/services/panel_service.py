@@ -1,5 +1,6 @@
 """패널 검색 서비스"""
 from typing import Dict, Any, List
+import re
 from app.db.connection import get_db_connection
 from app.services.sql_service import execute_sql_safe
 
@@ -7,12 +8,13 @@ from app.services.sql_service import execute_sql_safe
 class PanelService:
     """패널 검색 및 관련 비즈니스 로직"""
     
-    def search(self, parsed_query: Dict[str, Any]) -> Dict[str, Any]:
+    def search(self, parsed_query: Dict[str, Any], previous_panel_ids: List[str] | None = None) -> Dict[str, Any]:
         """
         파싱된 쿼리를 기반으로 패널 검색
         
         Args:
             parsed_query: 파싱된 쿼리 딕셔너리
+            previous_panel_ids: 이전 추출 결과의 패널 ID 목록 (후속 질의 시 사용)
             
         Returns:
             검색 결과 딕셔너리
@@ -50,6 +52,16 @@ class PanelService:
                 target_table = 'core.join_clean'
 
         extracted_chips: List[str] = [w for w in parsed_query.get('text', '').split() if w]
+        
+        # 목표 수 추출 (예: "100명" -> 100)
+        target_limit: int = None
+        limit_match = re.search(r'(\d{1,4})\s*명', text)
+        if limit_match:
+            target_limit = int(limit_match.group(1))
+            # extracted_chips에서 "100명" 같은 패턴을 찾아서 목표 수로 표시
+            for i, chip in enumerate(extracted_chips):
+                if '명' in chip and re.search(r'\d+', chip):
+                    extracted_chips[i] = f"{chip}(목표)"
 
         try:
             # 대상 테이블이 없으면 경고
@@ -59,7 +71,10 @@ class PanelService:
                     'previewData': [],
                     'estimatedCount': 0,
                     'warnings': ['core.join_clean 테이블을 찾을 수 없습니다.'],
-                    'panelIds': []
+                    'panelIds': [],
+                    'samplePanels': [],
+                    'distributionStats': {'gender': [], 'age': [], 'region': []},
+                    'sqlQuery': ''
                 }
 
             preview_rows: List[Dict[str, Any]] = []
@@ -69,7 +84,7 @@ class PanelService:
             if target_table:
                 where_clauses: List[str] = []
                 params: Dict[str, Any] = {}
-
+                
                 # 대상 테이블에 어떤 컬럼이 있는지 미리 조회하여 가드
                 schema_name, table_name = target_table.split('.')
                 cols = execute_sql_safe(
@@ -81,6 +96,16 @@ class PanelService:
                     limit=200,
                 )
                 available_cols = {c['column_name'] for c in cols}
+                
+                # 이전 추출 결과가 있으면 WHERE 조건에 추가
+                if previous_panel_ids and len(previous_panel_ids) > 0:
+                    # respondent_id IN (...) 조건 추가
+                    # SQL injection 방지를 위해 파라미터화된 쿼리 사용
+                    if 'respondent_id' in available_cols:
+                        # IN 절 사용 (튜플로 변환하여 안전하게 처리)
+                        # psycopg2는 튜플을 IN 절에 안전하게 바인딩할 수 있음
+                        where_clauses.append("respondent_id IN %(previous_panel_ids)s")
+                        params['previous_panel_ids'] = tuple(previous_panel_ids)
 
                 # 성별 매핑 (DB 값: '남' / '여')
                 gender_value = None
@@ -154,6 +179,53 @@ class PanelService:
 
                 # 미리보기 및 카운트 쿼리 구성
                 where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+                
+                # LIMIT 적용 (목표 수가 있으면 사용, 없으면 제한 없음 - 매우 큰 값 사용)
+                # execute_sql_safe가 항상 LIMIT을 추가하므로, 제한 없이 가져오려면 매우 큰 값 사용
+                limit_value = target_limit if target_limit else 999999
+                limit_sql = f" LIMIT {limit_value}" if target_limit else ""
+
+                # previewData 생성 (필터 정보를 구조화)
+                preview_data: List[Dict[str, Any]] = []
+                
+                # 성별 필터
+                if gender_value and 'gender' in available_cols:
+                    preview_data.append({
+                        'columnHuman': '성별',
+                        'columnRaw': 'gender',
+                        'operator': '=',
+                        'value': gender_value
+                    })
+                
+                # 연령대 필터
+                for token, (a, b) in decade_map.items():
+                    if token in text:
+                        if 'age_text' in available_cols:
+                            preview_data.append({
+                                'columnHuman': '연령',
+                                'columnRaw': 'age_text',
+                                'operator': 'BETWEEN',
+                                'value': f'{a}-{b}세'
+                            })
+                        elif 'age' in available_cols:
+                            preview_data.append({
+                                'columnHuman': '연령',
+                                'columnRaw': 'age',
+                                'operator': 'BETWEEN',
+                                'value': f'{a}-{b}세'
+                            })
+                        break
+                
+                # 지역 필터
+                for keyword, region_value in region_keywords.items():
+                    if keyword in text and 'region' in available_cols:
+                        preview_data.append({
+                            'columnHuman': '지역',
+                            'columnRaw': 'region',
+                            'operator': 'LIKE',
+                            'value': region_value
+                        })
+                        break
 
                 # 스키마와 테이블명을 따옴표로 감싸서 쿼리 실행
                 preview_rows = execute_sql_safe(
@@ -161,22 +233,119 @@ class PanelService:
                     params=params,
                     limit=10,
                 )
+                # 전체 카운트 (LIMIT 없이)
                 count_row = execute_sql_safe(
                     query=f'SELECT COUNT(*) AS cnt FROM "{schema_name}"."{table_name}"{where_sql}',
                     params=params,
                     limit=1,
                 )
                 estimated_count = int(count_row[0]['cnt']) if count_row else 0
+                
+                # 목표 수가 있으면 경고 추가
+                if target_limit and estimated_count > target_limit:
+                    warnings.append(f'조건에 맞는 패널이 {estimated_count}명이지만, 요청하신 {target_limit}명으로 제한합니다.')
+                elif target_limit and estimated_count < target_limit:
+                    warnings.append(f'조건에 맞는 패널이 {estimated_count}명으로 요청하신 {target_limit}명보다 적습니다.')
+                
                 panel_ids: List[str] = []
+                sample_panels: List[Dict[str, Any]] = []
+                distribution_stats: Dict[str, Any] = {
+                    'gender': [],
+                    'age': [],
+                    'region': []
+                }
+                # 실제 SQL 쿼리 (디버깅용 - 실제 실행된 쿼리 포함)
+                # COUNT 쿼리
+                count_query = f'SELECT COUNT(*) AS cnt FROM "{schema_name}"."{table_name}"{where_sql}'
+                # 실제 추출 쿼리 (execute_sql_safe가 LIMIT을 추가하므로 쿼리에는 LIMIT 포함하지 않음)
+                if target_limit:
+                    actual_sql_query: str = f'SELECT respondent_id FROM "{schema_name}"."{table_name}"{where_sql} LIMIT {limit_value}'
+                else:
+                    actual_sql_query: str = count_query
+                
+                # 디버깅: 실제 적용된 필터 조건 로그
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"[패널 검색] 적용된 필터: {where_clauses}")
+                logger.info(f"[패널 검색] 파라미터: {params}")
+                logger.info(f"[패널 검색] COUNT 쿼리: {count_query}")
+                logger.info(f"[패널 검색] 실제 추출 쿼리: {actual_sql_query}")
+                
                 # core.join_clean 테이블이면 respondent_id 컬럼을 panelIds로 사용
                 if target_table == 'core.join_clean':
                     if 'respondent_id' in available_cols:
+                        # 목표 수만큼만 가져오기
+                        # execute_sql_safe가 자체적으로 LIMIT을 추가하므로, 쿼리에는 LIMIT을 포함하지 않고 limit 파라미터만 전달
                         rid_rows = execute_sql_safe(
                             query=f'SELECT respondent_id FROM "{schema_name}"."{table_name}"{where_sql}',
                             params=params,
-                            limit=200,
+                            limit=limit_value,
                         )
                         panel_ids = [str(r.get('respondent_id')) for r in rid_rows if 'respondent_id' in r]
+                        
+                        # 패널 샘플 데이터 (상위 5명, 목표 수보다 작으면 목표 수만큼)
+                        sample_limit = min(5, limit_value) if target_limit else 5
+                        # execute_sql_safe가 자체적으로 LIMIT을 추가하므로, 쿼리에는 LIMIT을 포함하지 않고 limit 파라미터만 전달
+                        sample_rows = execute_sql_safe(
+                            query=f'SELECT respondent_id, gender, age_text, region FROM "{schema_name}"."{table_name}"{where_sql}',
+                            params=params,
+                            limit=sample_limit,
+                        )
+                        for row in sample_rows:
+                            sample_panels.append({
+                                'id': str(row.get('respondent_id', '')),
+                                'gender': row.get('gender', 'N/A'),
+                                'age': row.get('age_text', 'N/A'),
+                                'region': row.get('region', 'N/A')
+                            })
+                        
+                        # 성별 분포 통계
+                        if 'gender' in available_cols:
+                            gender_stats = execute_sql_safe(
+                                query=f'SELECT gender, COUNT(*) AS cnt FROM "{schema_name}"."{table_name}"{where_sql} GROUP BY gender',
+                                params=params,
+                                limit=10,
+                            )
+                            distribution_stats['gender'] = [
+                                {'label': row.get('gender', 'N/A'), 'value': int(row.get('cnt', 0))}
+                                for row in gender_stats
+                            ]
+                        
+                        # 연령대 분포 통계
+                        if 'age_text' in available_cols:
+                            age_stats = execute_sql_safe(
+                                query=(
+                                    f'SELECT '
+                                    f'CASE '
+                                    f'  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 20 AND 29 THEN \'20대\' '
+                                    f'  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 30 AND 39 THEN \'30대\' '
+                                    f'  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 40 AND 49 THEN \'40대\' '
+                                    f'  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) >= 50 THEN \'50대+\' '
+                                    f'  ELSE \'기타\' '
+                                    f'END AS age_group, '
+                                    f'COUNT(*) AS cnt '
+                                    f'FROM "{schema_name}"."{table_name}"{where_sql} '
+                                    f'GROUP BY age_group'
+                                ),
+                                params=params,
+                                limit=10,
+                            )
+                            distribution_stats['age'] = [
+                                {'label': row.get('age_group', 'N/A'), 'value': int(row.get('cnt', 0))}
+                                for row in age_stats if row.get('age_group')
+                            ]
+                        
+                        # 지역 분포 통계
+                        if 'region' in available_cols:
+                            region_stats = execute_sql_safe(
+                                query=f'SELECT region, COUNT(*) AS cnt FROM "{schema_name}"."{table_name}"{where_sql} GROUP BY region ORDER BY cnt DESC LIMIT 10',
+                                params=params,
+                                limit=10,
+                            )
+                            distribution_stats['region'] = [
+                                {'label': row.get('region', 'N/A'), 'value': int(row.get('cnt', 0))}
+                                for row in region_stats
+                            ]
                     else:
                         warnings.append("respondent_id 컬럼이 없어 panelIds를 채울 수 없음")
             else:
@@ -185,15 +354,30 @@ class PanelService:
                     'previewData': [],
                     'estimatedCount': 0,
                     'warnings': ['public 스키마에서 테이블을 찾지 못했습니다.'],
-                    'panelIds': []
+                    'panelIds': [],
+                    'samplePanels': [],
+                    'distributionStats': {'gender': [], 'age': [], 'region': []},
+                    'sqlQuery': ''
                 }
 
+            # 디버깅 정보 추가
+            debug_info = {
+                'appliedFilters': where_clauses,
+                'filterParams': params,
+                'countQuery': f'SELECT COUNT(*) AS cnt FROM "{schema_name}"."{table_name}"{where_sql}',
+                'extractQuery': actual_sql_query if target_limit else None,
+            }
+            
             return {
                 'extractedChips': extracted_chips,
-                'previewData': preview_rows if preview_rows else [],
+                'previewData': preview_data,
                 'estimatedCount': estimated_count,
                 'warnings': ([f'미리보기는 {target_table} 기준 10건입니다.'] + warnings),
-                'panelIds': panel_ids
+                'panelIds': panel_ids,
+                'samplePanels': sample_panels,
+                'distributionStats': distribution_stats,
+                'sqlQuery': actual_sql_query,
+                'debugInfo': debug_info  # 디버깅 정보 추가
             }
         except Exception as e:
             return {
@@ -201,7 +385,10 @@ class PanelService:
                 'previewData': [],
                 'estimatedCount': 0,
                 'warnings': [str(e)],
-                'panelIds': []
+                'panelIds': [],
+                'samplePanels': [],
+                'distributionStats': {'gender': [], 'age': [], 'region': []},
+                'sqlQuery': ''
             }
     
     def get_dashboard_data(self) -> Dict[str, Any]:

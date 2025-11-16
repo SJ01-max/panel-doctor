@@ -154,43 +154,89 @@ class LlmService:
         final_text = "\n".join(getattr(c, "text", "") for c in followup.content if getattr(c, "type", None) == "text")
         return {"answer": final_text, "tool_called": True, "tool_result_preview": str(tool_result_payload)[:500]}
 
-    def ask_for_sql_rows(self, user_prompt: str, model: str | None = None) -> Dict[str, Any]:
+    def ask_for_sql_rows(self, user_prompt: str, model: str | None = None, conversation_history: List[Dict[str, Any]] | None = None, panel_search_result: Dict[str, Any] | None = None) -> Dict[str, Any]:
         if not model:
             model = self.get_default_model()
         """
         실제 DB 스키마 정보를 기반으로 SQL-툴콜을 유도하여 결과 rows/count를 반환.
         - SELECT/WITH만 허용됨을 명시
         - 실제 테이블 구조를 동적으로 가져와서 LLM에게 제공
+        - 대화 히스토리를 지원하여 연속적인 대화 가능
+        - 패널 검색 결과를 받아서 일관된 답변 생성
         """
         # 실제 DB 스키마 정보 가져오기
         db_schema = self._get_db_schema_info()
         
+        # 패널 검색 결과가 있으면 이를 프롬프트에 포함
+        panel_result_context = ""
+        if panel_search_result:
+            estimated_count = panel_search_result.get('estimatedCount', 0)
+            distribution_stats = panel_search_result.get('distributionStats', {})
+            extracted_chips = panel_search_result.get('extractedChips', [])
+            previous_panel_ids = panel_search_result.get('previousPanelIds', [])
+            
+            panel_result_context = "\n\n=== 패널 검색 결과 (이 데이터를 기반으로 답변하세요) ===\n"
+            
+            # 이전 추출 결과를 기반으로 하는 질의인지 표시
+            if previous_panel_ids and len(previous_panel_ids) > 0:
+                panel_result_context += f"⚠️ 중요: 이 질의는 이전에 추출된 {len(previous_panel_ids):,}명의 패널을 기반으로 합니다.\n"
+                panel_result_context += "이 패널들 중에서 추가 조건을 만족하는 패널을 찾아야 합니다.\n\n"
+            
+            panel_result_context += f"총 패널 수: {estimated_count:,}명\n"
+            
+            if extracted_chips:
+                panel_result_context += f"추출된 조건: {', '.join(extracted_chips)}\n"
+            
+            if distribution_stats:
+                gender_stats = distribution_stats.get('gender', [])
+                age_stats = distribution_stats.get('age', [])
+                region_stats = distribution_stats.get('region', [])
+                
+                if gender_stats:
+                    panel_result_context += "\n성별 분포:\n"
+                    for stat in gender_stats:
+                        panel_result_context += f"  - {stat.get('label', 'N/A')}: {stat.get('value', 0):,}명\n"
+                
+                if age_stats:
+                    panel_result_context += "\n연령대 분포:\n"
+                    for stat in age_stats:
+                        panel_result_context += f"  - {stat.get('label', 'N/A')}: {stat.get('value', 0):,}명\n"
+                
+                if region_stats:
+                    panel_result_context += "\n지역 분포 (상위 10개):\n"
+                    for stat in region_stats[:10]:
+                        panel_result_context += f"  - {stat.get('label', 'N/A')}: {stat.get('value', 0):,}명\n"
+            
+            panel_result_context += "\n중요: 위 패널 검색 결과의 총 패널 수와 분포 통계를 정확히 사용하여 답변하세요. SQL을 실행하지 말고 제공된 데이터를 기반으로 분석 결과를 설명하세요.\n"
+        
         system_hint = (
             "당신은 데이터 분석 보조입니다. 사용자 요청을 읽고, 반드시 SELECT 또는 WITH로 시작하는 "
-            "하나의 읽기 전용 SQL만 사용하세요.\n\n"
+            "하나의 읽기 전용 SQL만 사용하세요. SQL 쿼리에는 세미콜론(;)을 포함하지 마세요.\n\n"
             "=== 데이터베이스 스키마 정보 ===\n"
             f"{db_schema}\n\n"
             "=== 중요 사항 ===\n"
             "1. 테이블명은 스키마를 포함하여 \"스키마명\".\"테이블명\" 형식으로 사용하세요.\n"
-            "2. core.join_clean 테이블: 패널 기본 정보\n"
+            "2. SQL 쿼리에는 절대 세미콜론(;)을 포함하지 마세요. 단일 SELECT 문만 작성하세요.\n"
+            "3. 패널 검색 결과가 제공된 경우, SQL을 실행하지 말고 제공된 데이터를 기반으로 분석 결과를 설명하세요.\n"
+            "4. core.join_clean 테이블: 패널 기본 정보\n"
             "   - gender: '남'/'여'\n"
             "   - region: 지역명 (예: '서울', '부산')\n"
             "   - age_text: '1987년 06월 29일 (만 38 세)' 형식\n"
             "   - respondent_id: 패널 ID\n"
             "   - q_concat: 질문 답변 번호 (숫자)\n"
-            "3. core.docs_json 테이블: 상세 답변 데이터 (JSONB)\n"
+            "5. core.docs_json 테이블: 상세 답변 데이터 (JSONB)\n"
             "   - doc: jsonb 타입, 구조: {answers: {...}, gender, region, age_text, ...}\n"
-            "4. core.poll_question 테이블: 질문 텍스트\n"
+            "6. core.poll_question 테이블: 질문 텍스트\n"
             "   - question_text: 질문 내용\n"
             "   - poll_code: 설문 코드\n"
             "   - q_no: 질문 번호\n"
-            "5. core.poll_option 테이블: 답변 옵션 텍스트\n"
+            "7. core.poll_option 테이블: 답변 옵션 텍스트\n"
             "   - opt_text: 답변 옵션 텍스트 (예: '넷플릭스', '디즈니 플러스', '유튜브', '운동', '달리기' 등)\n"
             "   - poll_code: 설문 코드\n"
             "   - q_no: 질문 번호\n"
             "   - opt_no: 옵션 번호\n"
-            "6. core.poll_option_count 테이블: 옵션별 응답 수\n"
-            "7. 의미 기반 검색 방법 (예: '달리는 걸 좋아하는'):\n"
+            "8. core.poll_option_count 테이블: 옵션별 응답 수\n"
+            "9. 의미 기반 검색 방법 (예: '달리는 걸 좋아하는'):\n"
             "   단계 1: poll_option에서 관련 키워드가 포함된 옵션 찾기\n"
             "     SELECT opt_no, q_no, poll_code FROM \"core\".\"poll_option\"\n"
             "     WHERE opt_text LIKE '%달리%' OR opt_text LIKE '%러닝%' OR opt_text LIKE '%조깅%' OR opt_text LIKE '%운동%'\n"
@@ -209,15 +255,44 @@ class LlmService:
             "       AND CAST(SUBSTRING(jc.age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN 30 AND 39\n"
             "       AND (po.opt_text LIKE '%달리%' OR po.opt_text LIKE '%러닝%' OR po.opt_text LIKE '%조깅%' OR po.opt_text LIKE '%운동%')\n"
             "   LIMIT 100\n"
-            "5. 성별은 '남'/'여' 값을 사용합니다.\n"
-            "6. 연령대 필터링:\n"
+            "10. 성별은 '남'/'여' 값을 사용합니다.\n"
+            "11. 연령대 필터링:\n"
             "   - age_text 컬럼: CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN 20 AND 29\n"
             "   - birthdate 컬럼: (EXTRACT(YEAR FROM CURRENT_DATE)-EXTRACT(YEAR FROM birthdate)) BETWEEN 20 AND 29\n"
-            "7. 지역 필터링: region LIKE '%서울%' 형식 사용\n"
-            "8. JOIN 예시: core.join_clean과 core.docs_json을 respondent_id로 조인하여 필터링\n"
-            "9. SQL이 필요하면 execute_sql 툴을 호출하세요.\n"
-            "10. 질문에 직접 답하지 말고, 필요 시 툴콜 후 결과를 요약하세요."
+            "12. 지역 필터링: region LIKE '%서울%' 형식 사용\n"
+            "13. JOIN 예시: core.join_clean과 core.docs_json을 respondent_id로 조인하여 필터링\n"
+            "14. 패널 검색 결과가 제공되면 SQL을 실행하지 말고, 제공된 데이터를 기반으로 분석 결과를 설명하세요.\n"
+            "15. 질문에 직접 답하지 말고, 필요 시 툴콜 후 결과를 요약하세요.\n"
+            "16. 이전 대화 맥락을 고려하여 사용자의 연속적인 질문에 자연스럽게 답변하세요."
+            f"{panel_result_context}"
         )
+
+        # 대화 히스토리 구성
+        messages = []
+        if conversation_history:
+            # 대화 히스토리를 Claude API 형식으로 변환
+            for msg in conversation_history:
+                if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                    messages.append({
+                        "role": msg['role'],
+                        "content": str(msg['content'])
+                    })
+        
+        # 현재 사용자 질의 추가
+        messages.append({"role": "user", "content": user_prompt})
+
+        # 패널 검색 결과가 있으면 SQL 실행 없이 바로 답변 생성
+        if panel_search_result:
+            # 패널 검색 결과가 제공된 경우, SQL을 실행하지 않고 직접 답변 생성
+            direct_response = self.client.messages.create(
+                model=model,
+                max_tokens=1024,
+                temperature=0,
+                system=system_hint,
+                messages=messages,
+            )
+            text = "\n".join(getattr(c, "text", "") for c in direct_response.content if getattr(c, "type", None) == "text")
+            return {"answer": text, "tool_called": False}
 
         initial = self.client.messages.create(
             model=model,
@@ -226,9 +301,7 @@ class LlmService:
             tools=[SQL_TOOL],
             tool_choice={"type": "auto"},
             system=system_hint,
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
         )
 
         content = initial.content
@@ -263,17 +336,29 @@ class LlmService:
         import json as json_lib
         tool_result_content = json_lib.dumps(tool_result_payload, ensure_ascii=False, default=str)
 
+        # followup 메시지에도 대화 히스토리 포함
+        followup_messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                    followup_messages.append({
+                        "role": msg['role'],
+                        "content": str(msg['content'])
+                    })
+        
+        followup_messages.extend([
+            {"role": "user", "content": user_prompt},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": tool_use.id, "name": "execute_sql", "input": args}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": tool_result_content}]},
+        ])
+
         followup = self.client.messages.create(
             model=model,
             max_tokens=1024,
             temperature=0,
             tools=[SQL_TOOL],
             system=system_hint,
-            messages=[
-                {"role": "user", "content": user_prompt},
-                {"role": "assistant", "content": [{"type": "tool_use", "id": tool_use.id, "name": "execute_sql", "input": args}]},
-                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": tool_result_content}]},
-            ],
+            messages=followup_messages,
         )
 
         final_text = "\n".join(getattr(c, "text", "") for c in followup.content if getattr(c, "type", None) == "text")
@@ -283,3 +368,5 @@ class LlmService:
         models = self.client.models.list()
         names = [m.id for m in getattr(models, 'data', [])]
         return {"models": names}
+
+

@@ -1,7 +1,12 @@
 """애플리케이션 설정"""
 import os
 from urllib.parse import urlparse, unquote
-from app.utils.secret_loader import load_secret
+try:
+    from app.secret_loader import load_secret
+except ImportError:
+    # secret_loader가 없으면 빈 함수로 대체
+    def load_secret(secret_name, region):
+        return {}
 
 class Config:
     """기본 설정"""

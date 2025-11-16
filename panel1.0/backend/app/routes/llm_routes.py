@@ -30,11 +30,18 @@ def sql_search():
         prompt = data.get('prompt', '').strip()
         # 기본 모델은 LlmService의 기본값 사용 (claude-3-5-haiku-latest)
         model = data.get('model', None)  # None이면 LlmService에서 기본값 사용
+        conversation_history = data.get('conversation_history', [])  # 대화 히스토리
+        panel_search_result = data.get('panel_search_result', None)  # 패널 검색 결과
         if not prompt:
             return jsonify({'error': 'prompt가 필요합니다.'}), 400
 
         svc = LlmService()
-        res = svc.ask_for_sql_rows(prompt, model=model)
+        res = svc.ask_for_sql_rows(
+            prompt, 
+            model=model, 
+            conversation_history=conversation_history,
+            panel_search_result=panel_search_result
+        )
         return jsonify(res), 200
     except RuntimeError as e:
         # API 키 누락 등 초기화 오류

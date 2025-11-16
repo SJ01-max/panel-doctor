@@ -16,6 +16,7 @@ def search_panels():
     try:
         data = request.get_json()
         query_text = data.get('query', '')
+        previous_panel_ids = data.get('previous_panel_ids', [])  # 이전 추출 결과의 패널 ID 목록
         
         if not query_text:
             return jsonify({'error': '질의 텍스트가 필요합니다.'}), 400
@@ -24,9 +25,9 @@ def search_panels():
         parser = QueryParser()
         parsed_query = parser.parse(query_text)
         
-        # 패널 검색
+        # 패널 검색 (이전 panelIds 전달)
         service = PanelService()
-        results = service.search(parsed_query)
+        results = service.search(parsed_query, previous_panel_ids=previous_panel_ids)
         
         return jsonify(results), 200
         

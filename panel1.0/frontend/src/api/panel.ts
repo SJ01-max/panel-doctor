@@ -12,11 +12,16 @@ import type {
  * 자연어 질의로 패널을 검색하는 API
  * 백엔드 API (POST /api/panel/search)를 호출합니다.
  * @param queryText 사용자가 입력한 자연어
+ * @param previousPanelIds 이전 추출 결과의 패널 ID 목록 (후속 질의 시 사용)
  * @returns 검색 결과
  */
-export const searchPanels = async (queryText: string): Promise<PanelSearchResult> => {
+export const searchPanels = async (queryText: string, previousPanelIds?: string[]): Promise<PanelSearchResult> => {
   try {
-    const response = await apiClient.post('/api/panel/search', { query: queryText });
+    const body: { query: string; previous_panel_ids?: string[] } = { query: queryText };
+    if (previousPanelIds && previousPanelIds.length > 0) {
+      body.previous_panel_ids = previousPanelIds;
+    }
+    const response = await apiClient.post('/api/panel/search', body);
     return response.data;
   } catch (error) {
     console.error("패널 검색 API 오류:", error);

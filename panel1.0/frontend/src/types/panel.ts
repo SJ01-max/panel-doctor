@@ -58,6 +58,30 @@ export interface PanelSearchResult {
    * 예: ["w291516899167465", "w462602481665114", "w462602513797087", ...]
    */
   panelIds: string[];
+
+  /**
+   * 패널 샘플 데이터 (상위 5명)
+   */
+  samplePanels?: {
+    id: string;
+    gender: string;
+    age: string;
+    region: string;
+  }[];
+
+  /**
+   * 분포 통계 데이터
+   */
+  distributionStats?: {
+    gender: { label: string; value: number }[];
+    age: { label: string; value: number }[];
+    region: { label: string; value: number }[];
+  };
+
+  /**
+   * 실제 실행된 SQL 쿼리
+   */
+  sqlQuery?: string;
 }
 
 // ... KpiData, RecentQuery, DashboardData 타입은 변경 없음 ...

@@ -4,6 +4,7 @@ import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
 import PanelDashboard from '../../features/panel/Dashboard';
 import QueryCanvas from '../../features/panel/QueryCanvas';
+import ReportView from '../../features/panel/ReportView';
 import DoctorDashboard from '../../features/doctor/Dashboard';
 import PersonalQuery from '../../features/doctor/PersonalQuery';
 
@@ -34,15 +35,7 @@ export default function Dashboard() {
         case 'query':
           return <QueryCanvas />;
         case 'results':
-          return (
-            <div className="p-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">결과/리포트</h1>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
-                <i className="ri-file-chart-line text-4xl text-gray-400 mb-4"></i>
-                <p className="text-gray-600">추출 결과 리포트가 여기에 표시됩니다.</p>
-              </div>
-            </div>
-          );
+          return <ReportView />;
         default:
           return <PanelDashboard />;
       }
