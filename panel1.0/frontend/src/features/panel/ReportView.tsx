@@ -77,20 +77,26 @@ const ReportDetail = ({
   const results = entry.results;
   const llm = entry.llm;
   const conditions = results ? extractConditionCategory(results.extractedChips) : null;
-  const extractedPanels = results?.panelIds?.slice(0, 10).map((id, idx) => ({
+  // panelIdsCount가 있으면 사용, 없으면 panelIds.length 사용
+  const totalPanelCount = (results as any)?.panelIdsCount || results?.panelIds?.length || 0;
+  const availablePanelIds = results?.panelIds || [];
+  const extractedPanels = availablePanelIds.slice(0, 10).map((id, idx) => ({
     id: id,
     name: `패널 ${idx + 1}`,
     index: idx + 1
-  })) || [];
-  const totalPanelCount = results?.panelIds?.length || 0;
+  }));
   const genderDistribution = results?.distributionStats?.gender || [];
   const ageDistribution = results?.distributionStats?.age || [];
 
   const handleDownloadIds = () => {
-    if (!results || !results.panelIds || results.panelIds.length === 0) return;
+    const panelIds = results?.panelIds || [];
+    if (panelIds.length === 0) {
+      alert('저장된 패널 ID가 없습니다. 리포트는 최대 100개의 샘플만 저장됩니다.');
+      return;
+    }
     
     const header = "panel_id (mb_sn)\n";
-    const csvContent = "data:text/csv;charset=utf-8," + header + results.panelIds.join("\n");
+    const csvContent = "data:text/csv;charset=utf-8," + header + panelIds.join("\n");
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -103,10 +109,14 @@ const ReportDetail = ({
   };
 
   const handleDownloadExcel = () => {
-    if (!results || !results.panelIds || results.panelIds.length === 0) return;
+    const panelIds = results?.panelIds || [];
+    if (panelIds.length === 0) {
+      alert('저장된 패널 ID가 없습니다. 리포트는 최대 100개의 샘플만 저장됩니다.');
+      return;
+    }
     
     const header = "panel_id (mb_sn)\n";
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header + results.panelIds.join("\n");
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header + panelIds.join("\n");
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -638,7 +648,7 @@ export default function ReportView() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {history.map((entry) => {
           const conditions = extractConditionCategory(entry.results.extractedChips);
-          const panelCount = entry.results.panelIds?.length || 0;
+          const panelCount = (entry.results as any)?.panelIdsCount || entry.results.panelIds?.length || 0;
           const estimatedCount = entry.results.estimatedCount || 0;
           
           return (

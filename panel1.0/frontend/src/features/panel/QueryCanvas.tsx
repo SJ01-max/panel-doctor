@@ -387,31 +387,74 @@ export default function QueryCanvas() {
             : msg
         ));
 
-        // 결과를 로컬 스토리지에 저장
+        // 결과를 로컬 스토리지에 저장 (panelIds는 제외하여 용량 절약)
+        // panelIds가 너무 크면 localStorage 용량 초과 오류 발생
         const reportEntry = {
           id: Date.now().toString(),
           query: currentQuery,
           timestamp: new Date().toISOString(),
-          results: validatedResponse,
+          results: {
+            ...validatedResponse,
+            // panelIds는 샘플만 저장 (최대 100개) 또는 저장하지 않음
+            panelIds: validatedResponse.panelIds.slice(0, 100), // 샘플만 저장
+            panelIdsCount: validatedResponse.panelIds.length, // 전체 개수는 별도로 저장
+          },
           llm: llmResponse
         };
         
-        const existingHistory = localStorage.getItem('panel_extraction_history');
-        let history: typeof reportEntry[] = [];
-        if (existingHistory) {
-          try {
-            history = JSON.parse(existingHistory);
-          } catch (e) {
-            console.error('Failed to parse history:', e);
+        try {
+          const existingHistory = localStorage.getItem('panel_extraction_history');
+          let history: typeof reportEntry[] = [];
+          if (existingHistory) {
+            try {
+              history = JSON.parse(existingHistory);
+            } catch (e) {
+              console.error('Failed to parse history:', e);
+            }
           }
-        }
-        
-        history.unshift(reportEntry);
-        history = history.slice(0, 50);
-        localStorage.setItem('panel_extraction_history', JSON.stringify(history));
-        localStorage.setItem('panel_extraction_results', JSON.stringify(validatedResponse));
-        if (llmResponse) {
-          localStorage.setItem('panel_llm_response', JSON.stringify(llmResponse));
+          
+          history.unshift(reportEntry);
+          history = history.slice(0, 20); // 최대 20개로 제한하여 용량 절약
+          
+          // localStorage 저장 시도 (용량 초과 시 오래된 항목 제거)
+          try {
+            localStorage.setItem('panel_extraction_history', JSON.stringify(history));
+          } catch (storageError: any) {
+            // 용량 초과 시 오래된 항목 제거 후 재시도
+            if (storageError.name === 'QuotaExceededError' || storageError.message?.includes('quota')) {
+              console.warn('localStorage 용량 초과, 오래된 항목 제거 중...');
+              // 더 적은 수로 제한
+              history = history.slice(0, 10);
+              localStorage.setItem('panel_extraction_history', JSON.stringify(history));
+            } else {
+              throw storageError;
+            }
+          }
+          
+          // 최신 결과는 panelIds 없이 저장 (용량 절약)
+          const resultsWithoutPanelIds = {
+            ...validatedResponse,
+            panelIds: [], // panelIds는 저장하지 않음
+            panelIdsCount: validatedResponse.panelIds.length,
+          };
+          
+          try {
+            localStorage.setItem('panel_extraction_results', JSON.stringify(resultsWithoutPanelIds));
+          } catch (storageError: any) {
+            // 용량 초과 시 무시 (필수 데이터가 아님)
+            console.warn('panel_extraction_results 저장 실패:', storageError);
+          }
+          
+          if (llmResponse) {
+            try {
+              localStorage.setItem('panel_llm_response', JSON.stringify(llmResponse));
+            } catch (storageError: any) {
+              console.warn('panel_llm_response 저장 실패:', storageError);
+            }
+          }
+        } catch (err: any) {
+          console.error('localStorage 저장 오류:', err);
+          // localStorage 오류는 치명적이지 않으므로 계속 진행
         }
       } else {
         setError('패널 검색 결과를 가져오지 못했습니다.');
