@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Badge from '../../components/base/Badge';
@@ -77,13 +78,49 @@ const SimpleBarChart = ({ data, label, color }: { data: { label: string; value: 
 };
 
 // 메시지 결과 컴포넌트
-const MessageResults = ({ results, llm }: { results?: PanelSearchResult; llm?: LlmSqlResponse }) => {
+const MessageResults = ({ results, llm, query }: { results?: PanelSearchResult; llm?: LlmSqlResponse; query?: string }) => {
   if (!results) return null;
 
   const conditions = extractConditionCategory(results.extractedChips);
   const genderDistribution = results?.distributionStats?.gender || [];
   const ageDistribution = results?.distributionStats?.age || [];
   const totalPanelCount = results?.panelIds?.length || 0;
+
+  const handleAddToFavorites = () => {
+    if (!query) return;
+    
+    // localStorage에서 기존 즐겨찾기 불러오기
+    const savedFavorites = localStorage.getItem('panel_favorites');
+    let favorites: any[] = [];
+    if (savedFavorites) {
+      try {
+        favorites = JSON.parse(savedFavorites);
+      } catch (e) {
+        console.error('즐겨찾기 파싱 오류:', e);
+      }
+    }
+    
+    // 이미 즐겨찾기에 있는지 확인
+    const isAlreadyFavorite = favorites.some((fav: any) => fav.query === query);
+    if (isAlreadyFavorite) {
+      alert('이미 즐겨찾기에 추가된 검색어입니다.');
+      return;
+    }
+    
+    // chips 추출
+    const chips = results.extractedChips || [];
+    
+    // 즐겨찾기 추가
+    const newFavorite = {
+      id: Date.now().toString(),
+      query: query,
+      chips: chips
+    };
+    
+    favorites.push(newFavorite);
+    localStorage.setItem('panel_favorites', JSON.stringify(favorites));
+    alert('즐겨찾기에 추가되었습니다.');
+  };
 
   const handleDownloadIds = () => {
     if (!results || !results.panelIds || results.panelIds.length === 0) return;
@@ -113,6 +150,20 @@ const MessageResults = ({ results, llm }: { results?: PanelSearchResult; llm?: L
 
   return (
     <div className="mt-4 space-y-4 animate-fade-in">
+      {/* 즐겨찾기 추가 버튼 */}
+      {query && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleAddToFavorites}
+            className="px-3 py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 border border-yellow-200"
+            title="즐겨찾기에 추가"
+          >
+            <i className="ri-star-line"></i>
+            즐겨찾기에 추가
+          </button>
+        </div>
+      )}
+      
       {/* 핵심 지표 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
@@ -261,6 +312,7 @@ const MessageResults = ({ results, llm }: { results?: PanelSearchResult; llm?: L
 };
 
 export default function QueryCanvas() {
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -268,6 +320,7 @@ export default function QueryCanvas() {
   const [previousPanelIds, setPreviousPanelIds] = useState<string[] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const autoSearchExecuted = useRef(false);
 
   // 스크롤을 맨 아래로 이동
   const scrollToBottom = () => {
@@ -278,13 +331,32 @@ export default function QueryCanvas() {
     scrollToBottom();
   }, [messages]);
 
-  const handleQuerySubmit = async () => {
-    if (!query.trim() || isLoading) return;
+  // location state에서 initialQuery를 받아서 자동 검색
+  useEffect(() => {
+    const state = location.state as { initialQuery?: string; autoSearch?: boolean } | null;
+    if (state?.initialQuery && state?.autoSearch && !autoSearchExecuted.current) {
+      setQuery(state.initialQuery);
+      autoSearchExecuted.current = true;
+      // 약간의 지연 후 자동 검색 실행
+      setTimeout(() => {
+        handleQuerySubmit(state.initialQuery!);
+      }, 100);
+    }
+  }, [location.state]);
+
+  const handleQuerySubmit = async (queryText?: string) => {
+    const queryToUse = queryText || query;
+    if (!queryToUse.trim() || isLoading) return;
+    
+    // queryText가 제공된 경우 query state도 업데이트
+    if (queryText) {
+      setQuery(queryText);
+    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: query.trim(),
+      content: queryToUse.trim(),
       timestamp: new Date(),
     };
 
@@ -304,8 +376,10 @@ export default function QueryCanvas() {
 
     setIsLoading(true);
     setError(null);
-    const currentQuery = query.trim();
-    setQuery('');
+    const currentQuery = queryToUse.trim();
+    if (!queryText) {
+      setQuery('');
+    }
 
     // 이전 메시지에서 가장 최근 추출 결과 찾기
     const previousMessageWithResults = [...messages]
@@ -375,11 +449,12 @@ export default function QueryCanvas() {
         });
         
         // 어시스턴트 메시지 업데이트
+        // 메시지 버블에는 간단한 메시지만 표시하고, 상세한 AI 해석은 MessageResults에서만 표시
         setMessages(prev => prev.map(msg => 
           msg.id === assistantMessageId 
             ? {
                 ...msg,
-                content: llmResponse?.answer || '패널 검색이 완료되었습니다.',
+                content: '패널 검색이 완료되었습니다.',
                 results: validatedResponse,
                 llm: llmResponse || undefined,
                 isLoading: false,
@@ -492,18 +567,18 @@ export default function QueryCanvas() {
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       {/* 헤더 */}
-      <div className="flex-shrink-0 p-6 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
+      <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#2F6BFF] to-[#8B5CF6] bg-clip-text text-transparent">
+            <h1 className="text-xl font-bold bg-gradient-to-r from-[#2F6BFF] to-[#8B5CF6] bg-clip-text text-transparent">
               패널 질의 챗봇
             </h1>
-            <p className="text-gray-600 mt-1 text-sm">자연어로 패널을 검색하고 대화하세요</p>
+            <p className="text-gray-600 mt-0.5 text-xs">자연어로 패널을 검색하고 대화하세요</p>
           </div>
           {messages.length === 0 && (
-            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full shadow-soft border border-gray-100">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-              <span className="text-sm text-gray-600">AI 준비됨</span>
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#2F6BFF]/10 to-[#8B5CF6]/10 backdrop-blur-sm rounded-full shadow-sm border border-[#2F6BFF]/20">
+              <div className="w-2 h-2 bg-[#2F6BFF] rounded-full animate-pulse"></div>
+              <span className="text-xs text-[#2F6BFF] font-medium">AI 준비됨</span>
             </div>
           )}
         </div>
@@ -512,31 +587,31 @@ export default function QueryCanvas() {
       {/* 채팅 영역 */}
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto p-6 space-y-4"
+        className="flex-1 overflow-y-auto p-4 space-y-4"
       >
         {messages.length === 0 && (
-          <div className="max-w-4xl mx-auto mt-12 animate-fade-in">
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 bg-gradient-to-br from-[#2F6BFF] to-[#8B5CF6] rounded-full flex items-center justify-center mx-auto mb-4">
-                <i className="ri-robot-line text-4xl text-white"></i>
+          <div className="max-w-4xl mx-auto mt-2 animate-fade-in">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-[#2F6BFF] to-[#8B5CF6] rounded-full flex items-center justify-center mx-auto mb-2">
+                <i className="ri-robot-line text-2xl text-white"></i>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">패널 검색 챗봇에 오신 것을 환영합니다</h2>
-              <p className="text-gray-600 mb-6">자연어로 패널을 검색하고, 대화를 이어가며 더 세밀한 조건으로 필터링할 수 있습니다.</p>
+              <h2 className="text-lg font-bold text-gray-900 mb-1">패널 검색 챗봇에 오신 것을 환영합니다</h2>
+              <p className="text-gray-600 mb-3 text-xs">자연어로 패널을 검색하고, 대화를 이어가며 더 세밀한 조건으로 필터링할 수 있습니다.</p>
             </div>
             
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                <i className="ri-lightbulb-line mr-2 text-yellow-500"></i>
+              <h3 className="text-xs font-medium text-gray-700 mb-2 flex items-center justify-center">
+                <i className="ri-lightbulb-line mr-1.5 text-yellow-500"></i>
                 빠른 시작 - 예시 질문
               </h3>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 justify-center">
                 {EXAMPLE_QUERIES.map((example, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleExampleClick(example)}
-                    className="px-4 py-2 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-full text-sm text-gray-700 hover:bg-gradient-to-r hover:from-[#2F6BFF]/10 hover:to-[#8B5CF6]/10 hover:border-[#2F6BFF] hover:text-[#2F6BFF] transition-all duration-300 hover:shadow-md hover:scale-105"
+                    className="px-3 py-1.5 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-full text-xs text-gray-700 hover:bg-gradient-to-r hover:from-[#2F6BFF]/10 hover:to-[#8B5CF6]/10 hover:border-[#2F6BFF] hover:text-[#2F6BFF] transition-all duration-300 hover:shadow-md hover:scale-105"
                   >
-                    <i className="ri-search-line mr-1.5"></i>
+                    <i className="ri-search-line mr-1"></i>
                     {example}
                   </button>
                 ))}
@@ -589,7 +664,11 @@ export default function QueryCanvas() {
                   
                   {/* 결과 표시 */}
                   {!message.isLoading && message.role === 'assistant' && (
-                    <MessageResults results={message.results} llm={message.llm} />
+                    <MessageResults 
+                      results={message.results} 
+                      llm={message.llm} 
+                      query={messages.find(m => m.role === 'user' && m.id < message.id)?.content || query} 
+                    />
                   )}
 
                   {/* 타임스탬프 */}
@@ -605,10 +684,10 @@ export default function QueryCanvas() {
       </div>
 
       {/* 입력 영역 */}
-      <div className="flex-shrink-0 p-6 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
+      <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
               <i className="ri-error-warning-line mr-2"></i>
               {error}
             </div>
@@ -620,7 +699,7 @@ export default function QueryCanvas() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="패널 검색 조건을 입력하세요... (예: 서울 20대 남자 100명)"
-                className="w-full min-h-[60px] max-h-[200px] p-4 bg-white border-0 rounded-xl resize-none focus:ring-0 focus:outline-none text-gray-800 placeholder-gray-400 text-sm"
+                className="w-full min-h-[60px] max-h-[200px] p-4 bg-white border-0 rounded-xl resize-none focus:ring-2 focus:ring-[#2F6BFF]/20 focus:outline-none text-gray-800 placeholder-gray-400 text-sm"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -635,9 +714,9 @@ export default function QueryCanvas() {
                   Enter로 전송
                 </div>
                 <Button 
-                  onClick={handleQuerySubmit} 
+                  onClick={() => handleQuerySubmit()} 
                   disabled={isLoading || !query.trim()}
-                  className="shadow-lg hover:shadow-xl transition-all duration-300"
+                  className="shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-r from-[#2F6BFF] to-[#8B5CF6] text-white border-0"
                   size="sm"
                 >
                   {isLoading ? (

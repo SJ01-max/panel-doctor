@@ -116,5 +116,18 @@ export interface RecentQuery {
 export interface DashboardData {
   kpiData: KpiData[];
   recentQueries: RecentQuery[];
+  panelSummary?: {
+    totalPanels: number;
+    genderDistribution: { name: string; value: number; color: string }[];
+    ageDistribution: { age: string; count: number }[];
+    regionDistribution: { name: string; value: number; color: string }[];
+  };
+  panelTrends?: {
+    month: string;
+    total: number;
+    age20s: number;
+    age30s: number;
+    age40s: number;
+  }[];
 }
 

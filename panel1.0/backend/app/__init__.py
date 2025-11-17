@@ -10,24 +10,26 @@ def create_app():
     """Flask 애플리케이션 팩토리"""
     app = Flask(__name__)
     
+    # 설정 로드 (CORS 설정 전에 필요)
+    app.config.from_object('app.config')
+    
     # CORS 설정: 환경설정의 CORS_ORIGINS 값을 사용 (쉼표로 분리된 목록)
+    # 프로덕션 환경의 ALB 주소도 포함
+    cors_origins = list(Config.CORS_ORIGINS) + [
+        "http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com",
+        "http://capstone-alb-528635803.ap-northeast-2.elb.amazonaws.com"
+    ]
+    
     CORS(
         app,
         resources={
-        r"/api/*": {
-            "origins": [
-                "http://localhost:5173",  # Vite 기본 포트
-                "http://localhost:3000",   # React 기본 포트
-                "http://capstone-front-back-nlb-5df2d37f3e3da2a2.elb.ap-northeast-2.amazonaws.com",
-                "http://capstone-alb-528635803.ap-northeast-2.elb.amazonaws.com"
-            ]
-        }
-    },
+            r"/api/*": {
+                "origins": cors_origins
+            }
+        },
         supports_credentials=False,
     )
 
-    # 설정 로드
-    app.config.from_object('app.config')
     
     # 데이터베이스 초기화
     from app.db import init_db

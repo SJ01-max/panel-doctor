@@ -1,35 +1,160 @@
 """패널 검색 서비스"""
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import re
 from app.db.connection import get_db_connection
 from app.services.sql_service import execute_sql_safe
+from app.services.vector_search_service import VectorSearchService
 
 
 class PanelService:
     """패널 검색 및 관련 비즈니스 로직"""
+    
+    def __init__(self):
+        self.vector_search = VectorSearchService()
+    
+    def _verify_panel_conditions(
+        self, 
+        panel_ids: List[str], 
+        filters: Dict[str, Any],
+        target_table: str,
+        available_cols: set
+    ) -> List[str]:
+        """
+        상위 10명의 패널이 조건에 맞는지 재검증
+        
+        Args:
+            panel_ids: 검증할 패널 ID 목록
+            filters: 적용된 필터 조건
+            target_table: 대상 테이블
+            available_cols: 사용 가능한 컬럼 목록
+            
+        Returns:
+            조건에 맞는 패널 ID 목록
+        """
+        if not panel_ids or len(panel_ids) == 0:
+            return []
+        
+        # 상위 10명만 검증
+        verify_ids = panel_ids[:10]
+        if len(verify_ids) == 0:
+            return panel_ids
+        
+        schema_name, table_name = target_table.split('.')
+        where_clauses = []
+        params: Dict[str, Any] = {}
+        
+        # 패널 ID 필터
+        where_clauses.append("respondent_id IN %(verify_ids)s")
+        params['verify_ids'] = tuple(verify_ids)
+        
+        # 필터 조건 재적용
+        if filters.get('gender') and 'gender' in available_cols:
+            where_clauses.append("gender = %(gender)s")
+            params['gender'] = filters['gender']
+        
+        if filters.get('age_range') and 'age_text' in available_cols:
+            age_from, age_to = filters['age_range']
+            where_clauses.append(
+                "CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN %(age_from)s AND %(age_to)s"
+            )
+            params['age_from'] = age_from
+            params['age_to'] = age_to
+        
+        if filters.get('top_regions') and 'region' in available_cols:
+            region_conditions = []
+            for i, region in enumerate(filters['top_regions']):
+                region_conditions.append(f"region LIKE %(region_{i})s")
+                params[f'region_{i}'] = f'%{region}%'
+            where_clauses.append(f"({' OR '.join(region_conditions)})")
+        
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        
+        try:
+            verified_rows = execute_sql_safe(
+                query=f'SELECT respondent_id FROM "{schema_name}"."{table_name}"{where_sql}',
+                params=params,
+                limit=10,
+            )
+            verified_ids = [str(r.get('respondent_id')) for r in verified_rows if 'respondent_id' in r]
+            
+            # 검증된 ID와 나머지 ID 합치기
+            remaining_ids = panel_ids[10:] if len(panel_ids) > 10 else []
+            return verified_ids + remaining_ids
+        except Exception as e:
+            print(f"패널 검증 오류: {e}")
+            return panel_ids
     
     def search(self, parsed_query: Dict[str, Any], previous_panel_ids: List[str] | None = None) -> Dict[str, Any]:
         """
         파싱된 쿼리를 기반으로 패널 검색
         
         Args:
-            parsed_query: 파싱된 쿼리 딕셔너리
+            parsed_query: 파싱된 쿼리 딕셔너리 (LLM 파싱 결과 포함)
             previous_panel_ids: 이전 추출 결과의 패널 ID 목록 (후속 질의 시 사용)
             
         Returns:
             검색 결과 딕셔너리
         """
-        # 간단 규칙 기반 자연어 → 조건 매핑 (+ 안전 SELECT)
-        # - 키워드 포함 시 대상 테이블 결정
-        # - 실제 데이터는 core.join_clean 테이블에 있음
-        # - 성별/연령대(20/30/40/50대) 조건을 WHERE로 적용
-        # - 존재하지 않는 컬럼은 자동 스킵하고 warnings에 기록
+        # 1. LLM 파싱 결과 활용
+        structured = parsed_query.get('structured', {})
+        filters = parsed_query.get('filters', {})
         text = str(parsed_query.get('text', '')).lower()
-        target_table = None
         
-        # 질문 관련 키워드가 있으면 question 테이블 검색
+        # 2. extracted_chips 생성 (LLM 파싱 결과 기반)
+        extracted_chips: List[str] = []
+        if filters.get('top_regions'):
+            extracted_chips.extend(filters['top_regions'])
+        if filters.get('gender'):
+            extracted_chips.append(filters['gender'])
+        if filters.get('age_range'):
+            age_from, age_to = filters['age_range']
+            extracted_chips.append(f"{age_from}대")
+        elif filters.get('age_exact'):
+            extracted_chips.append(f"{filters['age_exact']}세")
+        if structured.get('limit'):
+            extracted_chips.append(f"{structured['limit']}명")
+        
+        # LLM 파싱 결과가 없으면 텍스트 기반으로 폴백
+        if not extracted_chips:
+            extracted_chips = [w for w in parsed_query.get('text', '').split() if w]
+        
+        # 목표 수 추출 (LLM 결과 우선, 없으면 텍스트에서 추출)
+        target_limit: Optional[int] = structured.get('limit')
+        if not target_limit:
+            limit_match = re.search(r'(\d{1,4})\s*명', text)
+            if limit_match:
+                target_limit = int(limit_match.group(1))
+        
+        # 3. 의미 검색 키워드 감지 및 벡터DB 검색
+        semantic_panel_ids: List[str] = []
+        semantic_keywords: List[str] = []
+        
+        # '좋아/선호' 키워드 감지
+        if any(keyword in text for keyword in ['좋아', '선호', '취미', '관심']):
+            # LLM이 추출한 semantic_hint 사용
+            semantic_hint = structured.get('semantic_hint', '')
+            if semantic_hint:
+                semantic_keywords.append(semantic_hint)
+            else:
+                # 텍스트에서 의미 검색 키워드 추출
+                # 예: "운동 좋아함", "아웃도어 취미", "강아지 키우는"
+                semantic_keywords.append(text)
+        
+        # needs_semantic이 True이면 의미 검색 수행
+        if structured.get('needs_semantic', False) and semantic_keywords:
+            try:
+                semantic_panel_ids = self.vector_search.extract_panel_ids_from_semantic_search(
+                    query_text=text,
+                    semantic_keywords=semantic_keywords
+                )
+                if semantic_panel_ids:
+                    extracted_chips.append(f"의미검색({len(semantic_panel_ids)}명)")
+            except Exception as e:
+                print(f"의미 검색 오류: {e}")
+        
+        # 대상 테이블 결정
+        target_table = None
         if 'question' in text or '질문' in text:
-            # core.poll_question 테이블 확인
             chk = execute_sql_safe(
                 query=(
                     "SELECT 1 FROM information_schema.tables "
@@ -40,7 +165,6 @@ class PanelService:
             if chk:
                 target_table = 'core.poll_question'
         else:
-            # 기본적으로 core.join_clean 테이블 사용 (실제 패널 데이터)
             chk = execute_sql_safe(
                 query=(
                     "SELECT 1 FROM information_schema.tables "
@@ -50,18 +174,6 @@ class PanelService:
             )
             if chk:
                 target_table = 'core.join_clean'
-
-        extracted_chips: List[str] = [w for w in parsed_query.get('text', '').split() if w]
-        
-        # 목표 수 추출 (예: "100명" -> 100)
-        target_limit: int = None
-        limit_match = re.search(r'(\d{1,4})\s*명', text)
-        if limit_match:
-            target_limit = int(limit_match.group(1))
-            # extracted_chips에서 "100명" 같은 패턴을 찾아서 목표 수로 표시
-            for i, chip in enumerate(extracted_chips):
-                if '명' in chip and re.search(r'\d+', chip):
-                    extracted_chips[i] = f"{chip}(목표)"
 
         try:
             # 대상 테이블이 없으면 경고
@@ -99,83 +211,121 @@ class PanelService:
                 
                 # 이전 추출 결과가 있으면 WHERE 조건에 추가
                 if previous_panel_ids and len(previous_panel_ids) > 0:
-                    # respondent_id IN (...) 조건 추가
-                    # SQL injection 방지를 위해 파라미터화된 쿼리 사용
                     if 'respondent_id' in available_cols:
-                        # IN 절 사용 (튜플로 변환하여 안전하게 처리)
-                        # psycopg2는 튜플을 IN 절에 안전하게 바인딩할 수 있음
                         where_clauses.append("respondent_id IN %(previous_panel_ids)s")
                         params['previous_panel_ids'] = tuple(previous_panel_ids)
-
-                # 성별 매핑 (DB 값: '남' / '여')
+                
+                # 의미 검색 결과가 있으면 WHERE 조건에 추가
+                if semantic_panel_ids and len(semantic_panel_ids) > 0:
+                    if 'respondent_id' in available_cols:
+                        # 이전 패널 ID와 의미 검색 결과를 교집합으로 처리
+                        if previous_panel_ids and len(previous_panel_ids) > 0:
+                            # 교집합 계산 (Python에서)
+                            semantic_set = set(semantic_panel_ids)
+                            previous_set = set(previous_panel_ids)
+                            intersection = list(semantic_set & previous_set)
+                            if intersection:
+                                where_clauses.append("respondent_id IN %(semantic_panel_ids)s")
+                                params['semantic_panel_ids'] = tuple(intersection)
+                        else:
+                            where_clauses.append("respondent_id IN %(semantic_panel_ids)s")
+                            params['semantic_panel_ids'] = tuple(semantic_panel_ids)
+                
+                # LLM 파싱 결과 기반 필터 적용
+                applied_filters: Dict[str, Any] = {}
+                
+                # 성별 필터 (LLM 결과 우선)
                 gender_value = None
-                if '남자' in text or '남성' in text or '남 ' in text or text.endswith('남'):
-                    gender_value = '남'
-                elif '여자' in text or '여성' in text or '여 ' in text or text.endswith('여'):
-                    gender_value = '여'
+                if filters.get('gender'):
+                    gender_value = filters['gender']
+                else:
+                    # 폴백: 텍스트 기반 추출
+                    if '남자' in text or '남성' in text or '남 ' in text or text.endswith('남'):
+                        gender_value = '남'
+                    elif '여자' in text or '여성' in text or '여 ' in text or text.endswith('여'):
+                        gender_value = '여'
+                
                 if gender_value and 'gender' in available_cols:
                     where_clauses.append("gender = %(gender)s")
                     params['gender'] = gender_value
+                    applied_filters['gender'] = gender_value
                 elif gender_value:
                     warnings.append("gender 컬럼이 없어 성별 필터를 건너뜀")
-
-                # 연령대 매핑 (20/30/40/50대)
-                # age_text 컬럼에서 연령대 추출 (예: "1987년 06월 29일 (만 38 세)")
-                decade_map = {
-                    '20대': (20, 29),
-                    '30대': (30, 39),
-                    '40대': (40, 49),
-                    '50대': (50, 59),
-                }
-                for token, (a, b) in decade_map.items():
-                    if token in text:
-                        if 'age_text' in available_cols:
-                            # age_text에서 연령 추출하여 필터링
-                            # age_text 형식: "1987년 06월 29일 (만 38 세)"
-                            where_clauses.append(
-                                "CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN %(age_from)s AND %(age_to)s"
-                            )
-                            params['age_from'] = a
-                            params['age_to'] = b
-                        elif 'age' in available_cols:
-                            where_clauses.append("age BETWEEN %(age_from)s AND %(age_to)s")
-                            params['age_from'] = a
-                            params['age_to'] = b
-                        elif 'birthdate' in available_cols:
-                            # birthdate가 있을 경우 현재 나이를 계산하여 범위 필터
-                            where_clauses.append(
-                                "(EXTRACT(YEAR FROM CURRENT_DATE)::int - EXTRACT(YEAR FROM birthdate)::int) BETWEEN %(age_from)s AND %(age_to)s"
-                            )
-                            params['age_from'] = a
-                            params['age_to'] = b
-                        else:
-                            warnings.append("age/age_text/birthdate 컬럼이 없어 연령대 필터를 건너뜀")
-                        break
                 
-                # 지역 필터 (region 컬럼)
-                region_keywords = {
-                    '서울': '서울',
-                    '부산': '부산',
-                    '대구': '대구',
-                    '인천': '인천',
-                    '광주': '광주',
-                    '대전': '대전',
-                    '울산': '울산',
-                    '경기': '경기',
-                    '강원': '강원',
-                    '충북': '충북',
-                    '충남': '충남',
-                    '전북': '전북',
-                    '전남': '전남',
-                    '경북': '경북',
-                    '경남': '경남',
-                    '제주': '제주',
-                }
-                for keyword, region_value in region_keywords.items():
-                    if keyword in text and 'region' in available_cols:
-                        where_clauses.append("region LIKE %(region)s")
-                        params['region'] = f'%{region_value}%'
-                        break
+                # 연령대 필터 (LLM 결과 우선)
+                if filters.get('age_range'):
+                    age_from, age_to = filters['age_range']
+                    if 'age_text' in available_cols:
+                        where_clauses.append(
+                            "CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN %(age_from)s AND %(age_to)s"
+                        )
+                        params['age_from'] = age_from
+                        params['age_to'] = age_to
+                        applied_filters['age_range'] = (age_from, age_to)
+                    elif 'age' in available_cols:
+                        where_clauses.append("age BETWEEN %(age_from)s AND %(age_to)s")
+                        params['age_from'] = age_from
+                        params['age_to'] = age_to
+                        applied_filters['age_range'] = (age_from, age_to)
+                elif filters.get('age_exact'):
+                    age_exact = filters['age_exact']
+                    if 'age_text' in available_cols:
+                        where_clauses.append(
+                            "CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) = %(age_exact)s"
+                        )
+                        params['age_exact'] = age_exact
+                        applied_filters['age_exact'] = age_exact
+                    elif 'age' in available_cols:
+                        where_clauses.append("age = %(age_exact)s")
+                        params['age_exact'] = age_exact
+                        applied_filters['age_exact'] = age_exact
+                else:
+                    # 폴백: 텍스트 기반 추출
+                    decade_map = {
+                        '20대': (20, 29),
+                        '30대': (30, 39),
+                        '40대': (40, 49),
+                        '50대': (50, 59),
+                    }
+                    for token, (a, b) in decade_map.items():
+                        if token in text:
+                            if 'age_text' in available_cols:
+                                where_clauses.append(
+                                    "CAST(SUBSTRING(age_text FROM '만 (\\d+) 세') AS INTEGER) BETWEEN %(age_from)s AND %(age_to)s"
+                                )
+                                params['age_from'] = a
+                                params['age_to'] = b
+                                applied_filters['age_range'] = (a, b)
+                            elif 'age' in available_cols:
+                                where_clauses.append("age BETWEEN %(age_from)s AND %(age_to)s")
+                                params['age_from'] = a
+                                params['age_to'] = b
+                                applied_filters['age_range'] = (a, b)
+                            break
+                
+                # 지역 필터 (LLM 결과 우선)
+                if filters.get('top_regions'):
+                    region_conditions = []
+                    for i, region in enumerate(filters['top_regions']):
+                        region_conditions.append(f"region LIKE %(region_{i})s")
+                        params[f'region_{i}'] = f'%{region}%'
+                    if region_conditions and 'region' in available_cols:
+                        where_clauses.append(f"({' OR '.join(region_conditions)})")
+                        applied_filters['top_regions'] = filters['top_regions']
+                else:
+                    # 폴백: 텍스트 기반 추출
+                    region_keywords = {
+                        '서울': '서울', '부산': '부산', '대구': '대구', '인천': '인천',
+                        '광주': '광주', '대전': '대전', '울산': '울산', '경기': '경기',
+                        '강원': '강원', '충북': '충북', '충남': '충남', '전북': '전북',
+                        '전남': '전남', '경북': '경북', '경남': '경남', '제주': '제주',
+                    }
+                    for keyword, region_value in region_keywords.items():
+                        if keyword in text and 'region' in available_cols:
+                            where_clauses.append("region LIKE %(region)s")
+                            params['region'] = f'%{region_value}%'
+                            applied_filters['top_regions'] = [region_value]
+                            break
 
                 # 미리보기 및 카운트 쿼리 구성
                 where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -185,47 +335,70 @@ class PanelService:
                 limit_value = target_limit if target_limit else 999999
                 limit_sql = f" LIMIT {limit_value}" if target_limit else ""
 
-                # previewData 생성 (필터 정보를 구조화)
+                # previewData 생성 (필터 정보를 구조화) - applied_filters 기반
                 preview_data: List[Dict[str, Any]] = []
                 
                 # 성별 필터
-                if gender_value and 'gender' in available_cols:
+                if applied_filters.get('gender') and 'gender' in available_cols:
                     preview_data.append({
                         'columnHuman': '성별',
                         'columnRaw': 'gender',
                         'operator': '=',
-                        'value': gender_value
+                        'value': applied_filters['gender']
                     })
                 
                 # 연령대 필터
-                for token, (a, b) in decade_map.items():
-                    if token in text:
-                        if 'age_text' in available_cols:
-                            preview_data.append({
-                                'columnHuman': '연령',
-                                'columnRaw': 'age_text',
-                                'operator': 'BETWEEN',
-                                'value': f'{a}-{b}세'
-                            })
-                        elif 'age' in available_cols:
-                            preview_data.append({
-                                'columnHuman': '연령',
-                                'columnRaw': 'age',
-                                'operator': 'BETWEEN',
-                                'value': f'{a}-{b}세'
-                            })
-                        break
+                if applied_filters.get('age_range'):
+                    age_from, age_to = applied_filters['age_range']
+                    if 'age_text' in available_cols:
+                        preview_data.append({
+                            'columnHuman': '연령',
+                            'columnRaw': 'age_text',
+                            'operator': 'BETWEEN',
+                            'value': f'{age_from}-{age_to}세'
+                        })
+                    elif 'age' in available_cols:
+                        preview_data.append({
+                            'columnHuman': '연령',
+                            'columnRaw': 'age',
+                            'operator': 'BETWEEN',
+                            'value': f'{age_from}-{age_to}세'
+                        })
+                elif applied_filters.get('age_exact'):
+                    if 'age_text' in available_cols:
+                        preview_data.append({
+                            'columnHuman': '연령',
+                            'columnRaw': 'age_text',
+                            'operator': '=',
+                            'value': f'{applied_filters["age_exact"]}세'
+                        })
+                    elif 'age' in available_cols:
+                        preview_data.append({
+                            'columnHuman': '연령',
+                            'columnRaw': 'age',
+                            'operator': '=',
+                            'value': f'{applied_filters["age_exact"]}세'
+                        })
                 
                 # 지역 필터
-                for keyword, region_value in region_keywords.items():
-                    if keyword in text and 'region' in available_cols:
+                if applied_filters.get('top_regions'):
+                    regions = applied_filters['top_regions']
+                    if 'region' in available_cols:
                         preview_data.append({
                             'columnHuman': '지역',
                             'columnRaw': 'region',
                             'operator': 'LIKE',
-                            'value': region_value
+                            'value': ', '.join(regions)
                         })
-                        break
+                
+                # 의미 검색 필터
+                if semantic_panel_ids and len(semantic_panel_ids) > 0:
+                    preview_data.append({
+                        'columnHuman': '의미검색',
+                        'columnRaw': 'semantic_search',
+                        'operator': 'IN',
+                        'value': f'{len(semantic_panel_ids)}명'
+                    })
 
                 # 스키마와 테이블명을 따옴표로 감싸서 쿼리 실행
                 preview_rows = execute_sql_safe(
@@ -275,13 +448,21 @@ class PanelService:
                 if target_table == 'core.join_clean':
                     if 'respondent_id' in available_cols:
                         # 목표 수만큼만 가져오기
-                        # execute_sql_safe가 자체적으로 LIMIT을 추가하므로, 쿼리에는 LIMIT을 포함하지 않고 limit 파라미터만 전달
                         rid_rows = execute_sql_safe(
                             query=f'SELECT respondent_id FROM "{schema_name}"."{table_name}"{where_sql}',
                             params=params,
                             limit=limit_value,
                         )
                         panel_ids = [str(r.get('respondent_id')) for r in rid_rows if 'respondent_id' in r]
+                        
+                        # 5. 가장 앞 10명이 조건에 맞는지 다시 테스트
+                        if len(panel_ids) > 0:
+                            panel_ids = self._verify_panel_conditions(
+                                panel_ids=panel_ids,
+                                filters=applied_filters,
+                                target_table=target_table,
+                                available_cols=available_cols
+                            )
                         
                         # 패널 샘플 데이터 (상위 5명, 목표 수보다 작으면 목표 수만큼)
                         sample_limit = min(5, limit_value) if target_limit else 5
@@ -572,10 +753,177 @@ class PanelService:
             },
         ]
 
+        # 패널 통계 데이터 조회
+        panel_summary: Dict[str, Any] = {
+            'totalPanels': 0,
+            'genderDistribution': [],
+            'ageDistribution': [],
+            'regionDistribution': []
+        }
+        
+        if alive:
+            try:
+                # 총 패널 수
+                total_count_row = execute_sql_safe(
+                    query='SELECT COUNT(*) AS cnt FROM "core"."join_clean"',
+                    limit=1,
+                )
+                panel_summary['totalPanels'] = int(total_count_row[0]['cnt']) if total_count_row else 0
+                
+                # 성별 분포
+                gender_stats = execute_sql_safe(
+                    query='SELECT gender, COUNT(*) AS cnt FROM "core"."join_clean" GROUP BY gender',
+                    limit=10,
+                )
+                
+                # 성별 값 변환 (M/F -> 남/여)
+                gender_map = {
+                    'M': '남성',
+                    'm': '남성',
+                    'F': '여성',
+                    'f': '여성',
+                    '남': '남성',
+                    '여': '여성',
+                    '남자': '남성',
+                    '여자': '여성'
+                }
+                
+                # 성별별로 합산
+                gender_totals = {'남성': 0, '여성': 0}
+                
+                for row in gender_stats:
+                    gender_raw = row.get('gender')
+                    if gender_raw is None:
+                        continue
+                    gender_value = str(gender_raw).strip()
+                    if not gender_value:
+                        continue
+                    
+                    gender_display = gender_map.get(gender_value, gender_value)
+                    count = int(row.get('cnt', 0))
+                    
+                    # 남성/여성으로 정규화하여 합산
+                    if gender_display == '남성' or gender_value.upper() in ['M', '남', '남자']:
+                        gender_totals['남성'] += count
+                    elif gender_display == '여성' or gender_value.upper() in ['F', '여', '여자']:
+                        gender_totals['여성'] += count
+                
+                # 최종 결과 생성 (남성, 여성만)
+                panel_summary['genderDistribution'] = []
+                if gender_totals['남성'] > 0:
+                    panel_summary['genderDistribution'].append({
+                        'name': '남성',
+                        'value': gender_totals['남성'],
+                        'color': '#2F6BFF'
+                    })
+                if gender_totals['여성'] > 0:
+                    panel_summary['genderDistribution'].append({
+                        'name': '여성',
+                        'value': gender_totals['여성'],
+                        'color': '#8B5CF6'
+                    })
+                
+                # 연령대 분포
+                try:
+                    # age_text에서 연령 추출하여 분포 계산
+                    # 이전에 작동했던 간단한 방식 사용
+                    age_stats = execute_sql_safe(
+                        query=(
+                            'SELECT '
+                            'CASE '
+                            '  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 20 AND 29 THEN \'20대\' '
+                            '  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 30 AND 39 THEN \'30대\' '
+                            '  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) BETWEEN 40 AND 49 THEN \'40대\' '
+                            '  WHEN CAST(SUBSTRING(age_text FROM \'만 (\\d+) 세\') AS INTEGER) >= 50 THEN \'50대+\' '
+                            'END AS age_group, '
+                            'COUNT(*) AS cnt '
+                            'FROM "core"."join_clean" '
+                            'WHERE age_text IS NOT NULL '
+                            '  AND SUBSTRING(age_text FROM \'만 (\\d+) 세\') IS NOT NULL '
+                            'GROUP BY age_group '
+                            'ORDER BY age_group'
+                        ),
+                        limit=10,
+                    )
+                    
+                    if age_stats:
+                        panel_summary['ageDistribution'] = [
+                            {
+                                'age': row.get('age_group', 'N/A'),
+                                'count': int(row.get('cnt', 0))
+                            }
+                            for row in age_stats if row.get('age_group')
+                        ]
+                    else:
+                        panel_summary['ageDistribution'] = []
+                except Exception as e:
+                    print(f"연령대 분포 조회 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    panel_summary['ageDistribution'] = []
+                
+                # 지역 분포 (상위 4개 지역)
+                try:
+                    region_stats = execute_sql_safe(
+                        query=(
+                            'SELECT region, COUNT(*) AS cnt '
+                            'FROM "core"."join_clean" '
+                            'WHERE region IS NOT NULL AND region != \'\' '
+                            'GROUP BY region '
+                            'ORDER BY cnt DESC '
+                            'LIMIT 4'
+                        ),
+                        limit=4,
+                    )
+                    
+                    colors = ['#2F6BFF', '#5B8DEF', '#8B5CF6', '#A8A8A8']
+                    panel_summary['regionDistribution'] = [
+                        {
+                            'name': (row.get('region', 'N/A') or 'N/A')[:15],  # 지역명 길이 제한
+                            'value': int(row.get('cnt', 0)),
+                            'color': colors[i % len(colors)]
+                        }
+                        for i, row in enumerate(region_stats) if row.get('region')
+                    ]
+                    
+                    # 기타 지역 합산 (상위 4개 외)
+                    if len(region_stats) == 4:
+                        try:
+                            top_regions = [r.get('region') for r in region_stats if r.get('region')]
+                            if top_regions:
+                                # 상위 4개 지역을 제외한 나머지 합산
+                                # SQL 인젝션 방지를 위해 각 지역명을 이스케이프
+                                escaped_regions = [r.replace("'", "''") for r in top_regions]
+                                placeholders = ', '.join([f"'{r}'" for r in escaped_regions])
+                                other_count_row = execute_sql_safe(
+                                    query=(
+                                        f'SELECT COUNT(*) AS cnt FROM "core"."join_clean" '
+                                        f'WHERE region IS NOT NULL AND region != \'\' '
+                                        f'  AND region NOT IN ({placeholders})'
+                                    ),
+                                    limit=1,
+                                )
+                                if other_count_row and int(other_count_row[0]['cnt']) > 0:
+                                    panel_summary['regionDistribution'].append({
+                                        'name': '기타',
+                                        'value': int(other_count_row[0]['cnt']),
+                                        'color': '#A8A8A8'
+                                    })
+                        except Exception as e:
+                            print(f"기타 지역 합산 오류: {e}")
+                except Exception as e:
+                    print(f"지역 분포 조회 오류: {e}")
+                    panel_summary['regionDistribution'] = []
+                
+            except Exception as e:
+                print(f"패널 통계 조회 실패: {e}")
+                # 실패 시 기본값 유지
+        
         return {
             'kpiData': kpi_data,
             'recentQueries': recent_queries,
             'dbAlive': alive,
             'dbStats': db_stats,
             'tableSamples': table_samples,
+            'panelSummary': panel_summary,
         }

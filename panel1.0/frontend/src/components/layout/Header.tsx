@@ -14,17 +14,17 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-      <div className="max-w-7xl mx-auto px-6">
+    <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+      <div className="w-full px-4">
         <div className="flex items-center justify-between h-16">
           {/* 로고 및 탭 */}
-          <div className="flex items-center gap-10">
+          <div className="flex items-center gap-8">
             {/* 로고 */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#2F6BFF] rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-[#2F6BFF] to-[#8B5CF6] rounded-lg flex items-center justify-center shadow-md">
                 <i className="ri-dashboard-3-line text-white text-lg"></i>
               </div>
-              <span className="font-semibold text-gray-900 text-lg">PanelSystem</span>
+              <span className="font-bold text-gray-900 text-lg bg-gradient-to-r from-[#2F6BFF] to-[#8B5CF6] bg-clip-text text-transparent">PanelSystem</span>
             </div>
             
             {/* 탭 네비게이션 */}

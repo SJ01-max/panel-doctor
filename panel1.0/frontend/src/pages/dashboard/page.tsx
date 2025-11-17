@@ -14,16 +14,25 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'panel' | 'doctor'>(
     searchParams.get('tab') === 'doctor' ? 'doctor' : 'panel'
   );
-  const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [activeMenu, setActiveMenu] = useState(
+    searchParams.get('menu') || 'dashboard'
+  );
 
-  // URL 파라미터에서 탭 상태 읽기
+  // URL 파라미터에서 탭 및 메뉴 상태 읽기
   useEffect(() => {
     const tab = searchParams.get('tab');
+    const menu = searchParams.get('menu');
+    
     if (tab === 'doctor' || tab === 'panel') {
       setActiveTab(tab);
     } else {
       // URL에 탭 정보가 없으면 'panel'로 기본 설정
       setSearchParams({ tab: 'panel' });
+    }
+    
+    // 메뉴 파라미터가 있으면 activeMenu 업데이트
+    if (menu && ['dashboard', 'query', 'results'].includes(menu)) {
+      setActiveMenu(menu);
     }
   }, [searchParams, setSearchParams]);
 
@@ -67,7 +76,7 @@ export default function Dashboard() {
     setActiveMenu('dashboard'); // 탭 변경 시 대시보드로 리셋
     
     // URL 파라미터 업데이트
-    setSearchParams({ tab });
+    setSearchParams({ tab, menu: 'dashboard' });
   };
 
   return (
@@ -76,8 +85,15 @@ export default function Dashboard() {
       <Header activeTab={activeTab} onTabChange={handleTabChange} />
       <div className="flex flex-1 overflow-hidden">
         {/* (수정) Sidebar에 props 전달 (컴포넌트 정의에 따라 다를 수 있음) */}
-        <Sidebar activeTab={activeTab} activeMenu={activeMenu} onMenuClick={setActiveMenu} />
-        <main className="flex-1 overflow-y-auto bg-gray-100">
+        <Sidebar 
+          activeTab={activeTab} 
+          activeMenu={activeMenu} 
+          onMenuClick={(menuId) => {
+            setActiveMenu(menuId);
+            setSearchParams({ tab: activeTab, menu: menuId });
+          }} 
+        />
+        <main className="flex-1 overflow-y-auto bg-gray-100 ml-64">
           {renderContent()}
         </main>
       </div>

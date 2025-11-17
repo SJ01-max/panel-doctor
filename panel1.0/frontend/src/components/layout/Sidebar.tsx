@@ -33,7 +33,7 @@ export default function Sidebar({ activeTab, activeMenu, onMenuClick }: SidebarP
   };
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 p-4">
+    <aside className="w-64 bg-white border-r border-gray-200 fixed top-16 left-0 h-[calc(100vh-4rem)] overflow-y-auto p-4 z-20">
       <nav className="flex flex-col space-y-2">
         {/* 4. 선택된 menus 배열을 map으로 렌더링합니다. */}
         {menus.map((menu) => (
