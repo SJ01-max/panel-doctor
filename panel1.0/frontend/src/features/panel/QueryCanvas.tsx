@@ -4,7 +4,7 @@ import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Badge from '../../components/base/Badge';
 import { searchPanels } from '../../api/panel';
-import { sqlSearch, type LlmSqlResponse } from '../../api/llm';
+import { sqlSearch, semanticSearch, type LlmSqlResponse, type SemanticSearchResponse } from '../../api/llm';
 import type { PanelSearchResult } from '../../types/panel';
 
 const EXAMPLE_QUERIES = [
@@ -22,6 +22,7 @@ interface ChatMessage {
   timestamp: Date;
   results?: PanelSearchResult;
   llm?: LlmSqlResponse;
+  semanticSearch?: SemanticSearchResponse;
   isLoading?: boolean;
 }
 
@@ -73,6 +74,41 @@ const SimpleBarChart = ({ data, label, color }: { data: { label: string; value: 
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+// Semantic Search 결과 컴포넌트
+const SemanticSearchResults = ({ semanticSearch }: { semanticSearch?: SemanticSearchResponse }) => {
+  if (!semanticSearch) return null;
+
+  return (
+    <div className="mt-4 space-y-4 animate-fade-in">
+      <Card className="bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-200">
+        <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+          <i className="ri-search-line mr-2 text-purple-600"></i>
+          의미 검색 결과
+        </div>
+        <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed mb-4">
+          {semanticSearch.summary}
+        </div>
+        <div className="text-xs text-gray-500 mb-2">
+          검색된 문서: {semanticSearch.result_count}개
+        </div>
+        {semanticSearch.results && semanticSearch.results.length > 0 && (
+          <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+            {semanticSearch.results.slice(0, 5).map((result, idx) => (
+              <div key={idx} className="p-2 bg-white/50 rounded text-xs border border-purple-100">
+                <div className="font-medium text-gray-700">ID: {result.id}</div>
+                <div className="text-gray-600 mt-1 truncate">{result.content}</div>
+                {result.similarity !== undefined && (
+                  <div className="text-purple-600 mt-1">유사도: {(result.similarity * 100).toFixed(1)}%</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
@@ -318,6 +354,7 @@ export default function QueryCanvas() {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [previousPanelIds, setPreviousPanelIds] = useState<string[] | null>(null);
+  const [searchMode, setSearchMode] = useState<'panel' | 'semantic'>('panel');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const autoSearchExecuted = useRef(false);
@@ -393,6 +430,54 @@ export default function QueryCanvas() {
     const isFollowUpQuery = hasFollowUpKeywords && previousExtractedPanelIds && previousExtractedPanelIds.length > 0;
     
     try {
+      // Semantic Search 모드인 경우
+      if (searchMode === 'semantic') {
+        const semanticResult = await semanticSearch(currentQuery).catch((err) => {
+          console.error('의미 검색 오류:', err);
+          const errorMessage = err?.response?.data?.error || err?.message || '의미 검색 중 오류가 발생했습니다.';
+          setError(errorMessage);
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? {
+                  ...msg,
+                  content: `오류: ${errorMessage}`,
+                  isLoading: false,
+                }
+              : msg
+          ));
+          setIsLoading(false);
+          return null;
+        });
+        
+        if (semanticResult) {
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? {
+                  ...msg,
+                  content: semanticResult.summary || '의미 검색이 완료되었습니다.',
+                  semanticSearch: semanticResult,
+                  isLoading: false,
+                }
+              : msg
+          ));
+        } else if (semanticResult === null) {
+          // 이미 오류 처리됨
+          return;
+        } else {
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? {
+                  ...msg,
+                  content: '의미 검색 중 오류가 발생했습니다.',
+                  isLoading: false,
+                }
+              : msg
+          ));
+        }
+        setIsLoading(false);
+        return;
+      }
+
       // 대화 히스토리 구성 (이전 메시지들)
       const conversationHistory = messages
         .filter(m => m.role === 'user' || (m.role === 'assistant' && m.llm))
@@ -664,11 +749,14 @@ export default function QueryCanvas() {
                   
                   {/* 결과 표시 */}
                   {!message.isLoading && message.role === 'assistant' && (
-                    <MessageResults 
-                      results={message.results} 
-                      llm={message.llm} 
-                      query={messages.find(m => m.role === 'user' && m.id < message.id)?.content || query} 
-                    />
+                    <>
+                      <MessageResults 
+                        results={message.results} 
+                        llm={message.llm} 
+                        query={messages.find(m => m.role === 'user' && m.id < message.id)?.content || query} 
+                      />
+                      <SemanticSearchResults semanticSearch={message.semanticSearch} />
+                    </>
                   )}
 
                   {/* 타임스탬프 */}
@@ -693,12 +781,38 @@ export default function QueryCanvas() {
             </div>
           )}
           
+          {/* 검색 모드 전환 버튼 */}
+          <div className="mb-3 flex gap-2 justify-center">
+            <button
+              onClick={() => setSearchMode('panel')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                searchMode === 'panel'
+                  ? 'bg-gradient-to-r from-[#2F6BFF] to-[#8B5CF6] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <i className="ri-database-2-line mr-2"></i>
+              패널 검색
+            </button>
+            <button
+              onClick={() => setSearchMode('semantic')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                searchMode === 'semantic'
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <i className="ri-search-line mr-2"></i>
+              의미 검색
+            </button>
+          </div>
+          
           <div className="relative">
             <div className="relative bg-gradient-to-br from-gray-50 to-white rounded-2xl p-1 shadow-lg border border-gray-200">
               <textarea
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="패널 검색 조건을 입력하세요... (예: 서울 20대 남자 100명)"
+                placeholder={searchMode === 'semantic' ? "의미 검색 질문을 입력하세요... (예: 운동을 좋아하는 사람들의 특징)" : "패널 검색 조건을 입력하세요... (예: 서울 20대 남자 100명)"}
                 className="w-full min-h-[60px] max-h-[200px] p-4 bg-white border-0 rounded-xl resize-none focus:ring-2 focus:ring-[#2F6BFF]/20 focus:outline-none text-gray-800 placeholder-gray-400 text-sm"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {

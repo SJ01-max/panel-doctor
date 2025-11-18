@@ -319,6 +319,12 @@ export default function PanelDashboard() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={panelSummary.ageDistribution}>
+                  <defs>
+                    <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2F6BFF" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#8B5CF6" stopOpacity="1" />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="age" stroke="#666" />
                   <YAxis stroke="#666" />
@@ -337,12 +343,6 @@ export default function PanelDashboard() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <defs>
-                <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#2F6BFF" />
-                  <stop offset="100%" stopColor="#8B5CF6" />
-                </linearGradient>
-              </defs>
             </>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-gray-400">

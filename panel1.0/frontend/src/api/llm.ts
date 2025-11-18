@@ -12,6 +12,19 @@ export interface ConversationMessage {
   content: string;
 }
 
+export interface SemanticSearchResponse {
+  search_text: string;
+  sql: string;
+  results: Array<{
+    id: number;
+    content: string;
+    distance?: number;
+    similarity?: number;
+  }>;
+  summary: string;
+  result_count: number;
+}
+
 export async function sqlSearch(
   prompt: string, 
   model?: string, 
@@ -37,6 +50,16 @@ export async function sqlSearch(
   }
   const res = await apiClient.post('/api/llm/sql_search', body);
   return res.data as LlmSqlResponse;
+}
+
+export async function semanticSearch(
+  question: string,
+  model?: string
+): Promise<SemanticSearchResponse> {
+  const body: Record<string, unknown> = { question };
+  if (model) body.model = model;
+  const res = await apiClient.post('/api/llm/semantic_search', body);
+  return res.data as SemanticSearchResponse;
 }
 
 
