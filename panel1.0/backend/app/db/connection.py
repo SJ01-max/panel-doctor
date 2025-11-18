@@ -34,7 +34,8 @@ def get_db_connection() -> connection:
                 user=db_config['user'],
                 password=db_config['password'],
                 connect_timeout=30,  # 원격 연결을 위해 30초로 증가
-                sslmode='require'  # AWS RDS는 SSL 연결 필요
+                sslmode='require',  # AWS RDS는 SSL 연결 필요
+                options='-c statement_timeout=20000'  # 기본 statement_timeout 20초 설정
             )
             
             # 연결 풀 생성 성공

@@ -1,0 +1,103 @@
+{
+  "backend_patch": {
+    "file": "panel1.0/backend/app/services/vector_search_service.py",
+    "changes": [
+      "JOIN 구조 검증 추가: core.doc_embedding_view와 core.doc_embedding JOIN 필수 확인",
+      "WHERE 절 위치 검증: WHERE가 ORDER BY 전에 오는지 확인",
+      "<VECTOR> 플레이스홀더 위치 검증 강화",
+      "ORDER BY distance 필수 확인",
+      "LIMIT 10 강제 보장 (기존 LIMIT 제거 후 항상 10 추가)",
+      "임계값 필터링 완전 제거 (7가지 패턴 처리)",
+      "statement_timeout 20초 설정 (connection.py에서도 기본값 설정)"
+    ],
+    "key_code_snippets": {
+      "join_validation": "if 'core.doc_embedding_view' not in working_sql.lower() or 'core.doc_embedding' not in working_sql.lower(): raise ValueError(...)",
+      "where_position_check": "if where_pos > 0 and order_by_pos > 0 and where_pos > order_by_pos: raise ValueError(...)",
+      "limit_enforcement": "working_sql = re.sub(r'\\s+LIMIT\\s+\\d+', '', working_sql, flags=re.IGNORECASE); working_sql = re.sub(r'(ORDER\\s+BY[^;]+?)(\\s*;)?$', r'\\1 LIMIT 10\\2', working_sql, ...)"
+    }
+  },
+  
+  "llm_prompt_patch": {
+    "file": "panel1.0/backend/app/services/llm_service.py",
+    "changes": [
+      "structured 타입이 doc_embedding 테이블 사용 금지 명시",
+      "hybrid WHERE 필터 변환 로직 예시 추가 (gender, age, region)",
+      "SQL 템플릿 명확화 및 강제",
+      "LIMIT 10 필수 명시 강화",
+      "임계값 필터링 금지 명시 강화"
+    ],
+    "key_instructions": [
+      "structured 타입은 core.doc_embedding_view만 사용, JOIN 금지",
+      "hybrid 쿼리는 WHERE 절을 ORDER BY 전에 배치",
+      "gender: 'M' → v.gender = 'M', age: '30s' → v.age_text LIKE '30%'",
+      "모든 semantic/hybrid SQL은 'ORDER BY distance LIMIT 10'으로 끝나야 함"
+    ]
+  },
+  
+  "sql_template_patch": {
+    "enforced_template": "SELECT v.doc_id, v.embedding_text AS content, v.gender, v.age_text, v.region, e.embedding <=> '<VECTOR>'::vector AS distance FROM core.doc_embedding_view v JOIN core.doc_embedding e ON v.doc_id = e.doc_id {WHERE_CLAUSE_IF_NEEDED} ORDER BY distance LIMIT 10;",
+    "rules": [
+      "JOIN 구조 필수: v (doc_embedding_view)와 e (doc_embedding) JOIN",
+      "JOIN 조건: v.doc_id = e.doc_id",
+      "WHERE 절은 ORDER BY 전에 위치 (hybrid 쿼리)",
+      "ORDER BY distance 필수",
+      "LIMIT 10 필수 (다른 값 사용 금지)",
+      "임계값 필터링 금지 (distance < X, similarity > Y 등)"
+    ]
+  },
+  
+  "hybrid_logic_patch": {
+    "filter_conversion": {
+      "gender": {
+        "M": "v.gender = 'M'",
+        "F": "v.gender = 'F'"
+      },
+      "age": {
+        "20s": "v.age_text LIKE '20%'",
+        "30s": "v.age_text LIKE '30%'",
+        "40s": "v.age_text LIKE '40%'"
+      },
+      "region": {
+        "서울": "v.region = '서울'",
+        "경기": "v.region = '경기'",
+        "부산": "v.region = '부산'"
+      }
+    },
+    "example_hybrid_sql": "SELECT v.doc_id, v.embedding_text AS content, v.gender, v.age_text, v.region, e.embedding <=> '<VECTOR>'::vector AS distance FROM core.doc_embedding_view v JOIN core.doc_embedding e ON v.doc_id = e.doc_id WHERE v.gender = 'M' AND v.age_text LIKE '30%' ORDER BY distance LIMIT 10;",
+    "implementation": "LLM이 filters JSON을 받아서 WHERE 절로 변환하여 SQL에 삽입"
+  },
+  
+  "connection_patch": {
+    "file": "panel1.0/backend/app/db/connection.py",
+    "change": "psycopg2 연결 풀에 options='-c statement_timeout=20000' 추가",
+    "reason": "기본 statement_timeout을 20초로 설정하여 타임아웃 방지"
+  },
+  
+  "test_queries": {
+    "structured": {
+      "query": "20대 남자",
+      "expected_type": "structured",
+      "expected_sql_pattern": "SELECT ... FROM core.doc_embedding_view ... WHERE ...",
+      "should_not_contain": ["core.doc_embedding", "JOIN", "ORDER BY distance", "<VECTOR>"]
+    },
+    "semantic": {
+      "query": "운동 좋아하는 사람",
+      "expected_type": "semantic",
+      "expected_sql_pattern": "SELECT ... FROM core.doc_embedding_view v JOIN core.doc_embedding e ... ORDER BY distance LIMIT 10",
+      "must_contain": ["JOIN", "ORDER BY distance", "LIMIT 10", "<VECTOR>"],
+      "should_not_contain": ["WHERE", "distance <", "similarity >"]
+    },
+    "hybrid": {
+      "query": "운동 좋아하는 30대 남자",
+      "expected_type": "hybrid",
+      "expected_sql_pattern": "SELECT ... FROM core.doc_embedding_view v JOIN core.doc_embedding e ... WHERE v.gender = 'M' AND v.age_text LIKE '30%' ORDER BY distance LIMIT 10",
+      "must_contain": ["JOIN", "WHERE", "ORDER BY distance", "LIMIT 10", "<VECTOR>"],
+      "where_position": "WHERE 절이 ORDER BY 전에 위치해야 함"
+    }
+  },
+  
+  "explain_usage": "HNSW 인덱스 사용 확인 방법:\n\n1. PostgreSQL에서 EXPLAIN ANALYZE 실행:\n   EXPLAIN ANALYZE\n   SELECT v.doc_id, v.embedding_text, e.embedding <=> '[벡터값]'::vector AS distance\n   FROM core.doc_embedding_view v\n   JOIN core.doc_embedding e ON v.doc_id = e.doc_id\n   ORDER BY distance\n   LIMIT 10;\n\n2. 실행 계획 확인:\n   - 'Index Scan using idx_doc_embedding_hnsw' 확인\n   - 'Planning Time' < 10ms\n   - 'Execution Time' < 1000ms\n\n3. 백엔드 로그 확인:\n   - '[INFO] 검색 완료: X개 결과 (Y.XXX초)'\n   - Y.XXX < 1.0초여야 함\n\n4. 느린 쿼리 감지:\n   - '[WARN] 느린 쿼리 감지: X.XX초' 로그 확인\n   - 1초 이상이면 HNSW 인덱스 미사용 가능성",
+  
+  "why_this_fix_works": "이 패치가 모든 문제를 해결하는 이유:\n\n1. LIMIT 10 강제 보장:\n   - 기존 LIMIT 제거 후 항상 LIMIT 10 추가\n   - HNSW 인덱스는 LIMIT과 함께 사용될 때 가장 효율적\n   - LIMIT 없이 ORDER BY하면 전체 테이블 정렬 (O(n log n))\n   - LIMIT 10이 있으면 인덱스가 상위 10개만 선택 (O(log n))\n\n2. JOIN 구조 검증:\n   - 필수 JOIN 구조 확인으로 잘못된 쿼리 방지\n   - v (doc_embedding_view)와 e (doc_embedding) JOIN 필수\n   - JOIN 조건 v.doc_id = e.doc_id 확인\n\n3. WHERE 절 위치 검증:\n   - WHERE가 ORDER BY 전에 오는지 확인\n   - hybrid 쿼리에서 행 수 감소 후 정렬로 성능 향상\n   - 잘못된 위치 시 즉시 에러 발생\n\n4. 임계값 필터링 완전 제거:\n   - 7가지 패턴으로 모든 임계값 조건 제거\n   - 'WHERE distance < X', 'AND similarity > Y' 등 제거\n   - LIMIT 10만으로도 충분히 관련성 높은 결과 반환\n\n5. statement_timeout 설정:\n   - 연결 풀 레벨에서 기본값 20초 설정\n   - 쿼리 실행 시 SET LOCAL statement_timeout = 20000 추가 설정\n   - HNSW 인덱스 사용 시 1초 이내 완료 예상\n\n6. structured 타입 검증:\n   - doc_embedding 테이블 사용 금지 확인\n   - JOIN 사용 금지 확인\n   - core.doc_embedding_view만 사용하도록 강제\n\n7. <VECTOR> 플레이스홀더 검증:\n   - 플레이스홀더 존재 확인\n   - 올바른 위치 확인 (embedding <=> '<VECTOR>'::vector)\n   - 벡터 교체 전 검증으로 런타임 에러 방지\n\n8. LLM 프롬프트 강화:\n   - SQL 템플릿 명확화\n   - hybrid WHERE 필터 변환 로직 예시 제공\n   - structured 타입 제약사항 명시\n   - 출력 검증 규칙 추가\n\n결과:\n- 타임아웃 제거: LIMIT 10 + HNSW 인덱스로 < 1초 완료\n- 쿼리 정확성: JOIN 구조 및 WHERE 위치 검증\n- 성능 최적화: WHERE 절 위치, 임계값 제거, LIMIT 강제\n- 안정성: 모든 검증 단계에서 에러 발생 시 즉시 실패"
+}
+

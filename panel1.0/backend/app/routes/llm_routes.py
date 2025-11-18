@@ -88,6 +88,13 @@ def semantic_search():
         if not question:
             return jsonify({'error': 'question이 필요합니다.'}), 400
         
+        # 질문에 "총 몇명", "몇명", "개수" 등이 포함되어 있으면 LIMIT 제거
+        count_keywords = ['총 몇명', '몇명', '개수', '몇 개', '총 몇', '전체 몇', '모두 몇', '몇 명', '총 몇 명']
+        is_count_query = any(keyword in question for keyword in count_keywords)
+        # COUNT 쿼리인 경우 LIMIT을 None으로 설정 (제한 없음)
+        # 일반 쿼리는 기본값 10 사용
+        search_limit = None if is_count_query else 10
+        
         # 1. LLM으로 SQL 쿼리 생성
         llm_service = LlmService()
         sql_result = llm_service.generate_semantic_search_sql(question, model=model)
@@ -152,11 +159,46 @@ def semantic_search():
             print(f"[DEBUG] 필터: {filters}")
             
             try:
+                # COUNT 쿼리인 경우 유사도 임계값 적용
+                distance_threshold = 0.5 if is_count_query else None
+                
                 search_results = vector_service.execute_semantic_search_sql(
                     sql_query=sql_query,
-                    embedding_input=search_text
+                    embedding_input=search_text,
+                    limit=search_limit,
+                    distance_threshold=distance_threshold
                 )
                 print(f"[DEBUG] 검색 결과 개수: {len(search_results) if search_results else 0}")
+                
+                # 전체 개수 계산 (구조적 필터만 적용)
+                total_count = 0
+                try:
+                    from app.services.sql_service import execute_sql_safe
+                    # WHERE 조건만 추출하여 COUNT 쿼리 생성
+                    where_clause = ""
+                    if filters.get('gender'):
+                        where_clause += f" AND v.gender = '{filters['gender']}'"
+                    if filters.get('age'):
+                        age = filters['age']
+                        if age == '30s':
+                            where_clause += " AND (v.age_text LIKE '%만 30%' OR v.age_text LIKE '%만 31%' OR v.age_text LIKE '%만 32%' OR v.age_text LIKE '%만 33%' OR v.age_text LIKE '%만 34%' OR v.age_text LIKE '%만 35%' OR v.age_text LIKE '%만 36%' OR v.age_text LIKE '%만 37%' OR v.age_text LIKE '%만 38%' OR v.age_text LIKE '%만 39%')"
+                        elif age == '20s':
+                            where_clause += " AND (v.age_text LIKE '%만 20%' OR v.age_text LIKE '%만 21%' OR v.age_text LIKE '%만 22%' OR v.age_text LIKE '%만 23%' OR v.age_text LIKE '%만 24%' OR v.age_text LIKE '%만 25%' OR v.age_text LIKE '%만 26%' OR v.age_text LIKE '%만 27%' OR v.age_text LIKE '%만 28%' OR v.age_text LIKE '%만 29%')"
+                        elif age == '40s':
+                            where_clause += " AND (v.age_text LIKE '%만 40%' OR v.age_text LIKE '%만 41%' OR v.age_text LIKE '%만 42%' OR v.age_text LIKE '%만 43%' OR v.age_text LIKE '%만 44%' OR v.age_text LIKE '%만 45%' OR v.age_text LIKE '%만 46%' OR v.age_text LIKE '%만 47%' OR v.age_text LIKE '%만 48%' OR v.age_text LIKE '%만 49%')"
+                    if filters.get('region'):
+                        where_clause += f" AND v.region = '{filters['region']}'"
+                    
+                    if where_clause:
+                        count_sql = f"SELECT COUNT(*) as total FROM core.doc_embedding_view v WHERE 1=1 {where_clause}"
+                        count_result = execute_sql_safe(count_sql, {}, limit=1)
+                        if count_result and len(count_result) > 0:
+                            total_count = count_result[0].get('total', 0)
+                            print(f"[DEBUG] 구조적 필터만 적용한 전체 개수: {total_count}")
+                except Exception as count_error:
+                    print(f"[WARN] 전체 개수 계산 실패: {count_error}")
+                    total_count = None
+                    
             except Exception as e:
                 import traceback
                 print(f"[ERROR] Hybrid 검색 실행 실패: {e}")
@@ -188,14 +230,15 @@ def semantic_search():
                 summary = "검색 결과가 없습니다."
             
             return jsonify({
-                'type': 'hybrid',
-                'search_text': search_text,
-                'filters': filters,
-                'sql': sql_query,
-                'results': search_results,
-                'summary': summary,
-                'result_count': len(search_results)
-            }), 200
+                    'type': 'hybrid',
+                    'search_text': search_text,
+                    'filters': filters,
+                    'sql': sql_query,
+                    'results': search_results,
+                    'summary': summary,
+                    'result_count': len(search_results),
+                    'total_count': total_count  # 구조적 필터만 적용한 전체 개수
+                }), 200
         
         # 의미 검색 쿼리인 경우 (semantic)
         search_text = sql_result.get('search_text', question)
@@ -215,11 +258,34 @@ def semantic_search():
         print(f"[DEBUG] 검색 텍스트: {search_text}")
         
         try:
+            # COUNT 쿼리인 경우 유사도 임계값 적용 (관련성 높은 결과만 카운트)
+            # 코사인 거리: 0에 가까울수록 유사, 1에 가까울수록 다름
+            # distance < 0.5 정도면 유사하다고 볼 수 있음
+            distance_threshold = 0.5 if is_count_query else None
+            
             search_results = vector_service.execute_semantic_search_sql(
                 sql_query=sql_query,
-                embedding_input=search_text
+                embedding_input=search_text,
+                limit=search_limit,
+                distance_threshold=distance_threshold
             )
             print(f"[DEBUG] 검색 결과 개수: {len(search_results) if search_results else 0}")
+            
+            # 의미 검색의 경우 전체 개수 계산
+            # COUNT 쿼리인 경우 유사도 임계값을 적용한 결과 개수를 전체 개수로 사용
+            # 일반 쿼리인 경우도 반환된 결과 개수를 사용 (LIMIT이 적용되었을 수 있음)
+            total_count = len(search_results) if search_results else 0
+            
+            # COUNT 쿼리이고 결과가 LIMIT에 도달했다면, 더 많은 결과가 있을 수 있음을 표시
+            # search_limit이 None이 아닌 경우에만 비교
+            if is_count_query and search_limit is not None and total_count >= search_limit:
+                print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (LIMIT {search_limit}에 도달, 더 많은 결과가 있을 수 있음)")
+            elif is_count_query and search_limit is None:
+                if distance_threshold:
+                    print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (유사도 임계값: distance < {distance_threshold})")
+                else:
+                    print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (LIMIT 없음 - 전체 결과)")
+            
         except Exception as e:
             import traceback
             print(f"[ERROR] 검색 실행 실패: {e}")
@@ -255,7 +321,8 @@ def semantic_search():
             'sql': sql_query,
             'results': search_results,
             'summary': summary,
-            'result_count': len(search_results)
+            'result_count': len(search_results),
+            'total_count': total_count  # 의미 검색 결과 개수 (의미 검색은 유사도 기반)
         }), 200
         
     except RuntimeError as e:

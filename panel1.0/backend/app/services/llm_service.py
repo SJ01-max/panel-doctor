@@ -435,18 +435,36 @@ Given a user query, classify whether it is:
 A) structured panel filtering
    → 성별, 연령대, 지역, 응답 시점 등 명확한 조건 기반 검색
    → 예:  "20대 여자", "서울 사는 남자", "30대 남성 응답자"
+   → IMPORTANT: structured 타입은 core.doc_embedding_view 테이블만 사용
+   → MUST NOT use core.doc_embedding or vector operations
 
 B) semantic embedding search
    → 의미 기반 텍스트가 포함된 검색
    → 예:  "운동 좋아하는 사람", "감정적으로 불안한 20대", 
-           "취향이 비슷한 응답자", "스트레스 많은 층"
+           "취향이 비슷한 응답자", "스트레스 많은 층",
+           "반려동물", "애완동물", "펫", "반려동물 키우는 사람",
+           "반려동물을 좋아하는 사람", "반려동물을 기르는 사람"
+   → IMPORTANT: "반려동물", "애완동물", "펫", "반려견", "반려묘" 등의 키워드가 포함된 질문은 반드시 semantic으로 분류
+   → MUST use JOIN with core.doc_embedding_view and core.doc_embedding
+   → MUST use ORDER BY distance LIMIT 10
+   → search_text 생성 시: 원본 질문의 의미를 유지하면서 관련 동의어나 유사 표현을 포함하여 더 풍부한 검색 문구 생성
+     예: "반려동물" → "반려동물을 키우는 사람 반려동물을 좋아하는 사람 애완동물 펫"
 
 C) hybrid search (structured + semantic)
    → 의미 기반 + 구조적 필터 결합
-   → 예: "운동 좋아하는 30대 남자"
+   → 예: "운동 좋아하는 30대 남자", "반려동물 키우는 20대 여자", "애완동물 좋아하는 서울 거주자"
+   → MUST use JOIN with core.doc_embedding_view and core.doc_embedding
+   → MUST add WHERE filters BEFORE ORDER BY
+   → MUST use ORDER BY distance LIMIT 10
 
 You must classify the user query into one of:
   "structured", "semantic", "hybrid"
+
+CRITICAL CLASSIFICATION RULES:
+- If query contains "반려동물", "애완동물", "펫", "반려견", "반려묘", "반려동물을", "애완동물을" → MUST classify as "semantic" or "hybrid" (NEVER "structured")
+- If query contains meaning-based keywords (좋아하는, 선호하는, 관심있는, 키우는, 기르는, etc.) → MUST classify as "semantic" or "hybrid"
+- If query contains ONLY demographic filters (성별, 연령대, 지역) without meaning-based content → classify as "structured"
+- When in doubt between semantic and hybrid, choose "semantic" if no demographic filters are present
 
 ────────────────────────────────────────────
 📌 OUTPUT FORMAT
@@ -461,6 +479,13 @@ ALWAYS RETURN JSON ONLY.
   "sql": "SELECT ... FROM core.doc_embedding_view ... WHERE ..."
 }
 
+IMPORTANT for structured:
+- Use ONLY core.doc_embedding_view table
+- DO NOT use core.doc_embedding table
+- DO NOT use JOIN
+- DO NOT use vector operations (<=>)
+- Use simple WHERE clauses with gender, age_text, region
+
 (2) Semantic Query (의미 검색 모드):
 
 {
@@ -468,6 +493,12 @@ ALWAYS RETURN JSON ONLY.
   "search_text": "TEXT_TO_EMBED",
   "sql": "SELECT ... JOIN ... ORDER BY distance LIMIT 10"
 }
+
+IMPORTANT for search_text:
+- 원본 질문의 핵심 의미를 유지하면서 관련 동의어, 유사 표현을 포함하여 검색 범위를 넓힘
+- 예: "반려동물" → "반려동물을 키우는 사람 반려동물을 좋아하는 사람 애완동물 펫 반려견 반려묘"
+- 예: "운동 좋아하는" → "운동을 좋아하는 사람 운동을 즐기는 사람 운동 취미"
+- 단일 키워드만 사용하지 말고, 의미를 확장한 문구로 생성
 
 (3) Hybrid Query (구조적 + 의미 검색):
 
@@ -495,6 +526,18 @@ JOIN core.doc_embedding e ON v.doc_id = e.doc_id
 ORDER BY distance
 LIMIT 10;
 
+CRITICAL: 
+- You MUST return actual document rows (v.doc_id, v.embedding_text, etc.), NOT aggregate functions like COUNT, SUM, AVG
+- You MUST use "AS distance" for the distance calculation
+- You MUST use "ORDER BY distance" (the alias), NOT "ORDER BY e.embedding <=> '<VECTOR>'"
+- The purpose is to find similar documents, not to count them
+
+MANDATORY JOIN STRUCTURE:
+- You MUST use: FROM core.doc_embedding_view v
+- You MUST use: JOIN core.doc_embedding e ON v.doc_id = e.doc_id
+- The JOIN condition MUST be exactly: v.doc_id = e.doc_id
+- Do NOT use different table aliases or JOIN conditions
+
 CRITICAL RULES (MUST FOLLOW):
 1. ALWAYS use JOIN with v and e.
 2. ALWAYS return ORDER BY distance LIMIT 10 (NO EXCEPTIONS!).
@@ -509,6 +552,9 @@ CRITICAL RULES (MUST FOLLOW):
    - "AND distance < X"
 7. For semantic-only queries, use NO WHERE clause.
 8. For hybrid queries, WHERE must contain ONLY structured filters (gender, age, region).
+9. NEVER use COUNT, SUM, AVG, or any aggregate functions. You MUST return actual document rows.
+10. ALWAYS use "AS distance" for the distance calculation: e.embedding <=> '<VECTOR>'::vector AS distance
+11. ALWAYS use "ORDER BY distance" (not ORDER BY e.embedding <=> '<VECTOR>')
 
 OUTPUT VALIDATION:
 - Every semantic SQL MUST end with: "ORDER BY distance LIMIT 10"
@@ -531,12 +577,34 @@ Extract them into filters JSON:
    "region": "서울"
 }
 
+For hybrid queries, convert filters to SQL WHERE clauses:
+- gender: "M" → v.gender = 'M'
+- gender: "F" → v.gender = 'F'
+- age: "20s" → v.age_text LIKE '%만 20%' OR v.age_text LIKE '%만 21%' OR v.age_text LIKE '%만 22%' OR v.age_text LIKE '%만 23%' OR v.age_text LIKE '%만 24%' OR v.age_text LIKE '%만 25%' OR v.age_text LIKE '%만 26%' OR v.age_text LIKE '%만 27%' OR v.age_text LIKE '%만 28%' OR v.age_text LIKE '%만 29%'
+- age: "30s" → v.age_text LIKE '%만 30%' OR v.age_text LIKE '%만 31%' OR v.age_text LIKE '%만 32%' OR v.age_text LIKE '%만 33%' OR v.age_text LIKE '%만 34%' OR v.age_text LIKE '%만 35%' OR v.age_text LIKE '%만 36%' OR v.age_text LIKE '%만 37%' OR v.age_text LIKE '%만 38%' OR v.age_text LIKE '%만 39%'
+- age: "40s" → v.age_text LIKE '%만 40%' OR v.age_text LIKE '%만 41%' OR v.age_text LIKE '%만 42%' OR v.age_text LIKE '%만 43%' OR v.age_text LIKE '%만 44%' OR v.age_text LIKE '%만 45%' OR v.age_text LIKE '%만 46%' OR v.age_text LIKE '%만 47%' OR v.age_text LIKE '%만 48%' OR v.age_text LIKE '%만 49%'
+- region: "서울" → v.region = '서울'
+
+IMPORTANT: age_text format in DB is "YYYY년 MM월 DD일 (만 X 세)" format.
+Use LIKE '%만 X%' pattern to match age ranges.
+
+Example hybrid SQL:
+SELECT ... 
+FROM core.doc_embedding_view v
+JOIN core.doc_embedding e ON v.doc_id = e.doc_id
+WHERE v.gender = 'M' AND (v.age_text LIKE '%만 30%' OR v.age_text LIKE '%만 31%' OR v.age_text LIKE '%만 32%' OR v.age_text LIKE '%만 33%' OR v.age_text LIKE '%만 34%' OR v.age_text LIKE '%만 35%' OR v.age_text LIKE '%만 36%' OR v.age_text LIKE '%만 37%' OR v.age_text LIKE '%만 38%' OR v.age_text LIKE '%만 39%') AND v.region = '서울'
+ORDER BY distance
+LIMIT 10;
+
 ────────────────────────────────────────────
 📌 BEHAVIOR SUMMARY
 ────────────────────────────────────────────
 1. 이해 → Query classification
+   - "반려동물", "애완동물", "펫" 등이 포함된 질문은 반드시 semantic 또는 hybrid로 분류
 2. structured면 SQL WHERE 중심으로 생성
 3. semantic이면 search_text + semantic SQL 생성 (LIMIT 10 필수!)
+   - search_text는 원본 질문의 의미를 확장하여 관련 동의어 포함
+   - 예: "반려동물" → "반려동물을 키우는 사람 반려동물을 좋아하는 사람 애완동물 펫"
 4. hybrid면 filters + search_text + semantic SQL 생성 (WHERE + LIMIT 10 필수!)
 5. ALWAYS output JSON only.
 
@@ -545,6 +613,12 @@ CRITICAL REMINDERS:
 - NEVER add threshold filtering (distance < X, similarity > Y)
 - Hybrid queries: WHERE filters BEFORE ORDER BY
 - If LIMIT 10 is missing, the backend will FAIL
+
+CRITICAL: OUTPUT FORMAT
+- You MUST output ONLY valid JSON. No explanations, no markdown, no code blocks.
+- Start with { and end with }
+- Example valid output:
+{"type": "hybrid", "search_text": "운동을 좋아하는 사람", "filters": {"gender": "M", "age": "30s"}, "sql": "SELECT ... ORDER BY distance LIMIT 10"}
 
 If a query makes no sense:
 {
@@ -567,23 +641,63 @@ If a query makes no sense:
             # 응답에서 텍스트 추출
             text = "\n".join(getattr(c, "text", "") for c in response.content if getattr(c, "type", None) == "text")
             
+            # 디버깅: 원본 응답 로그
+            print(f"[DEBUG] LLM 원본 응답: {text[:500]}...")
+            
             # JSON 파싱 시도
             import json
             import re
             try:
-                # JSON 코드 블록 제거 시도
+                # 1. JSON 코드 블록 제거
                 if "```json" in text:
                     text = text.split("```json")[1].split("```")[0].strip()
                 elif "```" in text:
-                    text = text.split("```")[1].split("```")[0].strip()
+                    # 일반 코드 블록도 제거
+                    parts = text.split("```")
+                    if len(parts) >= 3:
+                        text = parts[1].strip()
+                        if text.startswith("json"):
+                            text = text[4:].strip()
                 
-                # JSON 객체만 추출 (첫 번째 { 부터 마지막 } 까지)
-                # LLM이 JSON 뒤에 추가 설명을 붙이는 경우 대비
-                json_match = re.search(r'\{.*\}', text, re.DOTALL)
-                if json_match:
-                    text = json_match.group(0)
+                # 2. JSON 객체 추출 (더 정확한 패턴)
+                # 중괄호 매칭을 고려한 추출
+                json_start = text.find('{')
+                if json_start == -1:
+                    raise ValueError("JSON 객체를 찾을 수 없습니다. '{' 문자가 없습니다.")
                 
-                result = json.loads(text)
+                # 중괄호 매칭으로 JSON 끝 찾기
+                brace_count = 0
+                json_end = -1
+                for i in range(json_start, len(text)):
+                    if text[i] == '{':
+                        brace_count += 1
+                    elif text[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                
+                if json_end == -1:
+                    # 중괄호 매칭 실패 시 정규식으로 폴백
+                    json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                    if json_match:
+                        text = json_match.group(0)
+                    else:
+                        raise ValueError("JSON 객체의 끝을 찾을 수 없습니다.")
+                else:
+                    text = text[json_start:json_end]
+                
+                # 3. JSON 파싱
+                text = text.strip()
+                print(f"[DEBUG] 추출된 JSON 텍스트: {text[:300]}...")
+                
+                try:
+                    result = json.loads(text)
+                except json.JSONDecodeError as parse_error:
+                    # JSON 파싱 실패 시 상세 정보
+                    print(f"[ERROR] JSON 파싱 오류: {parse_error}")
+                    print(f"[ERROR] 문제가 있는 텍스트: {text[:500]}")
+                    raise
                 
                 # type 필드 확인
                 query_type = result.get("type", "").lower()
@@ -601,6 +715,15 @@ If a query makes no sense:
                             "error": "LLM 응답에 sql이 없습니다.",
                             "raw_response": text
                         }
+                    
+                    # structured 쿼리는 doc_embedding 테이블이나 JOIN을 사용하면 안 됨
+                    sql_lower = result["sql"].lower()
+                    if "core.doc_embedding" in sql_lower and "join" in sql_lower:
+                        return {
+                            "error": "structured 타입은 core.doc_embedding 테이블이나 JOIN을 사용할 수 없습니다. core.doc_embedding_view만 사용하세요.",
+                            "raw_response": text
+                        }
+                    
                     return {
                         "type": "structured",
                         "filters": result.get("filters", {}),
@@ -667,11 +790,118 @@ If a query makes no sense:
                     "error": "LLM 응답 형식이 올바르지 않습니다. type 필드가 필요합니다.",
                     "raw_response": text
                 }
-            except json.JSONDecodeError:
-                return {
-                    "error": "LLM 응답을 JSON으로 파싱할 수 없습니다.",
-                    "raw_response": text
-                }
+            except (json.JSONDecodeError, ValueError) as e:
+                # JSON 파싱 실패 시 상세 정보 로깅
+                print(f"[ERROR] JSON 파싱 실패: {e}")
+                print(f"[ERROR] 파싱 시도한 텍스트: {text[:500]}")
+                
+                # 최후의 수단: 정규식으로 JSON 추출 시도
+                result = None
+                try:
+                    # 더 공격적인 JSON 추출
+                    json_patterns = [
+                        r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',  # 중첩된 중괄호
+                        r'\{.*?"type".*?\}',  # type 필드가 있는 JSON
+                        r'\{.*?"sql".*?\}',   # sql 필드가 있는 JSON
+                    ]
+                    
+                    for pattern in json_patterns:
+                        match = re.search(pattern, text, re.DOTALL)
+                        if match:
+                            try:
+                                extracted = match.group(0)
+                                parsed_result = json.loads(extracted)
+                                print(f"[INFO] 정규식으로 JSON 추출 성공")
+                                result = parsed_result
+                                # 정상 처리로 진행
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                    
+                    if result is None:
+                        # 모든 시도 실패
+                        return {
+                            "error": f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}",
+                            "raw_response": text[:1000],  # 처음 1000자만 반환
+                            "parsing_attempts": "모든 JSON 추출 시도 실패"
+                        }
+                    
+                    # 정규식으로 추출 성공한 경우 정상 처리로 진행
+                    # type 필드 확인
+                    query_type = result.get("type", "").lower()
+                    
+                    if query_type == "error":
+                        return {
+                            "error": result.get("reason", result.get("message", "Unknown error")),
+                            "raw_response": text[:1000]
+                        }
+                    
+                    # structured 쿼리인 경우
+                    if query_type == "structured":
+                        if "sql" not in result:
+                            return {
+                                "error": "LLM 응답에 sql이 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        sql_lower = result["sql"].lower()
+                        if "core.doc_embedding" in sql_lower and "join" in sql_lower:
+                            return {
+                                "error": "structured 타입은 core.doc_embedding 테이블이나 JOIN을 사용할 수 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        return {
+                            "type": "structured",
+                            "filters": result.get("filters", {}),
+                            "sql": result["sql"]
+                        }
+                    
+                    # semantic 쿼리인 경우
+                    if query_type == "semantic":
+                        if "search_text" not in result or "sql" not in result:
+                            return {
+                                "error": "LLM 응답에 search_text 또는 sql이 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        if "<VECTOR>" not in result.get("sql", ""):
+                            return {
+                                "error": "SQL 쿼리에 <VECTOR> 플레이스홀더가 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        return {
+                            "type": "semantic",
+                            "search_text": result["search_text"],
+                            "sql": result["sql"]
+                        }
+                    
+                    # hybrid 쿼리인 경우
+                    if query_type == "hybrid":
+                        if "search_text" not in result or "sql" not in result:
+                            return {
+                                "error": "LLM 응답에 search_text 또는 sql이 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        if "<VECTOR>" not in result.get("sql", ""):
+                            return {
+                                "error": "SQL 쿼리에 <VECTOR> 플레이스홀더가 없습니다.",
+                                "raw_response": text[:1000]
+                            }
+                        return {
+                            "type": "hybrid",
+                            "search_text": result["search_text"],
+                            "filters": result.get("filters", {}),
+                            "sql": result["sql"]
+                        }
+                    
+                    return {
+                        "error": "LLM 응답 형식이 올바르지 않습니다. type 필드가 필요합니다.",
+                        "raw_response": text[:1000]
+                    }
+                except Exception as fallback_error:
+                    return {
+                        "error": f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}",
+                        "raw_response": text[:1000],  # 처음 1000자만 반환
+                        "fallback_error": str(fallback_error)
+                    }
         except Exception as e:
             return {
                 "error": f"LLM 호출 실패: {str(e)}"

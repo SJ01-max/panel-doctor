@@ -23,6 +23,12 @@ export interface SemanticSearchResponse {
   }>;
   summary: string;
   result_count: number;
+  total_count?: number;  // 전체 개수 (hybrid의 경우 구조적 필터만 적용한 개수)
+  filters?: {
+    gender?: string;
+    age?: string;
+    region?: string;
+  };
 }
 
 export async function sqlSearch(

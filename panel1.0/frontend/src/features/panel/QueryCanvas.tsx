@@ -94,6 +94,11 @@ const SemanticSearchResults = ({ semanticSearch }: { semanticSearch?: SemanticSe
         </div>
         <div className="text-xs text-gray-500 mb-2">
           검색된 문서: {semanticSearch.result_count}개
+          {semanticSearch.total_count !== undefined && semanticSearch.total_count !== semanticSearch.result_count && (
+            <span className="ml-2 text-purple-600 font-semibold">
+              (전체: {semanticSearch.total_count.toLocaleString()}명)
+            </span>
+          )}
         </div>
         {semanticSearch.results && semanticSearch.results.length > 0 && (
           <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
@@ -347,17 +352,84 @@ const MessageResults = ({ results, llm, query }: { results?: PanelSearchResult; 
   );
 };
 
+const CONVERSATION_STORAGE_KEY = 'panel_conversation_history';
+
+// localStorage에서 대화 내용을 동기적으로 읽어오는 함수
+const loadConversationFromStorage = (): {
+  messages: ChatMessage[];
+  previousPanelIds: string[] | null;
+  searchMode: 'panel' | 'semantic';
+} => {
+  try {
+    const savedConversation = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (savedConversation) {
+      const parsed = JSON.parse(savedConversation);
+      const restoredMessages: ChatMessage[] = Array.isArray(parsed.messages)
+        ? parsed.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+        : [];
+      
+      return {
+        messages: restoredMessages,
+        previousPanelIds: parsed.previousPanelIds || null,
+        searchMode: parsed.searchMode || 'panel'
+      };
+    }
+  } catch (e) {
+    console.error('대화 내용 복원 실패:', e);
+  }
+  return {
+    messages: [],
+    previousPanelIds: null,
+    searchMode: 'panel'
+  };
+};
+
 export default function QueryCanvas() {
   const location = useLocation();
+  // localStorage에서 초기 상태를 동기적으로 로드
+  const initialConversation = loadConversationFromStorage();
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [previousPanelIds, setPreviousPanelIds] = useState<string[] | null>(null);
-  const [searchMode, setSearchMode] = useState<'panel' | 'semantic'>('panel');
+  const [messages, setMessages] = useState<ChatMessage[]>(initialConversation.messages);
+  const [previousPanelIds, setPreviousPanelIds] = useState<string[] | null>(initialConversation.previousPanelIds);
+  const [searchMode, setSearchMode] = useState<'panel' | 'semantic'>(initialConversation.searchMode);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const autoSearchExecuted = useRef(false);
+  const isInitialMount = useRef(true);
+  
+  // 컴포넌트가 마운트될 때 초기 마운트 플래그 해제
+  useEffect(() => {
+    // 약간의 지연 후 초기 마운트 플래그 해제 (저장 로직 활성화)
+    const timer = setTimeout(() => {
+      isInitialMount.current = false;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // messages가 변경될 때마다 localStorage에 저장 (초기 마운트 시에는 저장하지 않음)
+  useEffect(() => {
+    if (isInitialMount.current) {
+      return; // 초기 마운트 시에는 저장하지 않음
+    }
+    try {
+      const conversationData = {
+        messages: messages.map(msg => ({
+          ...msg,
+          timestamp: msg.timestamp.toISOString()
+        })),
+        previousPanelIds,
+        searchMode
+      };
+      localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(conversationData));
+    } catch (e) {
+      console.error('대화 내용 저장 실패:', e);
+    }
+  }, [messages, previousPanelIds, searchMode]);
 
   // 스크롤을 맨 아래로 이동
   const scrollToBottom = () => {
@@ -648,6 +720,17 @@ export default function QueryCanvas() {
   const handleExampleClick = (example: string) => {
     setQuery(example);
   };
+  
+  // 새 질의 시작 (대화 내용 초기화)
+  const handleNewQuery = () => {
+    if (confirm('새 질의를 시작하시겠습니까? 현재 대화 내용이 삭제됩니다.')) {
+      setMessages([]);
+      setPreviousPanelIds(null);
+      setQuery('');
+      setError(null);
+      localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -660,12 +743,25 @@ export default function QueryCanvas() {
             </h1>
             <p className="text-gray-600 mt-0.5 text-xs">자연어로 패널을 검색하고 대화하세요</p>
           </div>
-          {messages.length === 0 && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#2F6BFF]/10 to-[#8B5CF6]/10 backdrop-blur-sm rounded-full shadow-sm border border-[#2F6BFF]/20">
-              <div className="w-2 h-2 bg-[#2F6BFF] rounded-full animate-pulse"></div>
-              <span className="text-xs text-[#2F6BFF] font-medium">AI 준비됨</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <Button
+                onClick={handleNewQuery}
+                variant="secondary"
+                size="sm"
+                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                <i className="ri-add-line mr-1"></i>
+                새 질의
+              </Button>
+            )}
+            {messages.length === 0 && (
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#2F6BFF]/10 to-[#8B5CF6]/10 backdrop-blur-sm rounded-full shadow-sm border border-[#2F6BFF]/20">
+                <div className="w-2 h-2 bg-[#2F6BFF] rounded-full animate-pulse"></div>
+                <span className="text-xs text-[#2F6BFF] font-medium">AI 준비됨</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
