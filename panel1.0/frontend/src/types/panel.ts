@@ -121,6 +121,7 @@ export interface DashboardData {
     genderDistribution: { name: string; value: number; color: string }[];
     ageDistribution: { age: string; count: number }[];
     regionDistribution: { name: string; value: number; color: string }[];
+    trendingKeywords?: { keyword: string; count: number }[];
   };
   panelTrends?: {
     month: string;

@@ -25,6 +25,12 @@ def get_db_connection() -> connection:
             # 연결 풀 생성 (개별 파라미터 사용)
             # 타임아웃을 길게 설정 (원격 연결 시 필요)
             
+            # SSL 모드 설정 (환경변수로 제어 가능, 기본값: prefer)
+            import os
+            ssl_mode = os.environ.get('DB_SSLMODE', 'prefer')  # prefer, require, disable 등
+            
+            print(f"[DEBUG] DB 연결 시도: host={db_config['host']}, port={db_config['port']}, database={db_config['database']}, user={db_config['user']}, sslmode={ssl_mode}")
+            
             _connection_pool = pool.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=20,
@@ -34,7 +40,7 @@ def get_db_connection() -> connection:
                 user=db_config['user'],
                 password=db_config['password'],
                 connect_timeout=30,  # 원격 연결을 위해 30초로 증가
-                sslmode='require',  # AWS RDS는 SSL 연결 필요
+                sslmode=ssl_mode,  # 환경변수로 제어 가능
                 options='-c statement_timeout=20000'  # 기본 statement_timeout 20초 설정
             )
             
@@ -65,7 +71,11 @@ def get_db_connection() -> connection:
             _last_db_config = db_config.copy()
                 
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
             print(f"[실패] 데이터베이스 연결 실패: {e}")
+            print(f"[DEBUG] 연결 설정: host={db_config.get('host')}, port={db_config.get('port')}, database={db_config.get('database')}, user={db_config.get('user')}")
+            print(f"[DEBUG] 상세 오류:\n{error_trace}")
             raise
     elif _last_db_config != db_config:
         # 설정이 변경되었으면 기존 풀 닫고 재생성

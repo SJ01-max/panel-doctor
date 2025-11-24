@@ -42,3 +42,26 @@ export const getDashboardData = async (): Promise<DashboardData> => {
     throw error;
   }
 };
+
+/**
+ * 데이터 품질 진단 데이터를 가져오는 API
+ * 백엔드 API (GET /api/panel/health)를 호출합니다.
+ */
+export interface HealthData {
+  score: number;
+  total: number;
+  complete: number;
+  profileCompleteness: number;
+  contactValidity: number;
+  marketingConsent: number;
+}
+
+export const getHealthData = async (): Promise<HealthData> => {
+  try {
+    const response = await apiClient.get('/api/panel/health');
+    return response.data;
+  } catch (error) {
+    console.error("데이터 품질 진단 API 오류:", error);
+    throw error;
+  }
+};

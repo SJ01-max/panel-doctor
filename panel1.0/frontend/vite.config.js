@@ -72,8 +72,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src')
-    }
+      '@': resolve(__dirname, './src'),
+      // React 중복 설치 방지: 모든 React import를 단일 인스턴스로 통일
+      'react': resolve(__dirname, './node_modules/react'),
+      'react-dom': resolve(__dirname, './node_modules/react-dom'),
+    },
+    // 의존성 중복 해결
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     port: 3000,

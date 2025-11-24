@@ -1,50 +1,59 @@
-"""패널 검색 관련 라우트 및 툴 라우트"""
+"""
+패널 대시보드 및 도구 라우트 (PanelDataService 기반)
+- /api/panel/dashboard: 패널 대시보드 데이터 조회 (캐싱 적용)
+- /api/tools/*: 개발/디버깅용 도구 엔드포인트
+- 주의: search.py와는 다른 역할 (search.py는 통합 검색용)
+"""
 from flask import Blueprint, request, jsonify
-from app.services.enhanced_query_parser import EnhancedQueryParser as QueryParser
-from app.services.panel_service import PanelService
-from app.services.sql_service import execute_sql_safe
+from app.services.data.panel import PanelDataService
+from app.services.data.executor import execute_sql_safe
 from app.config import Config
 import traceback
+import time
 
 
-bp = Blueprint('search', __name__, url_prefix='/api/panel')
+bp = Blueprint('panel_search', __name__, url_prefix='/api/panel')
 
-
-@bp.route('/search', methods=['POST'])
-def search_panels():
-    """자연어 질의로 패널 검색"""
-    try:
-        data = request.get_json()
-        query_text = data.get('query', '')
-        previous_panel_ids = data.get('previous_panel_ids', [])  # 이전 추출 결과의 패널 ID 목록
-        
-        if not query_text:
-            return jsonify({'error': '질의 텍스트가 필요합니다.'}), 400
-        
-        # 자연어 질의 파싱
-        parser = QueryParser()
-        parsed_query = parser.parse(query_text)
-        
-        # 패널 검색 (이전 panelIds 전달)
-        service = PanelService()
-        results = service.search(parsed_query, previous_panel_ids=previous_panel_ids)
-        
-        return jsonify(results), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# 인메모리 캐시 (모듈 레벨 변수)
+_dashboard_cache = {
+    'data': None,
+    'timestamp': None
+}
+CACHE_TTL = 86400  # 24시간 (1일, 초 단위)
 
 
 @bp.route('/dashboard', methods=['GET'])
 def get_dashboard():
-    """대시보드 데이터 조회"""
+    """대시보드 데이터 조회 (인메모리 캐싱 적용)"""
+    global _dashboard_cache
+    
     try:
-        service = PanelService()
+        current_time = time.time()
+        
+        # 캐시가 유효한지 확인 (24시간 이내)
+        if (_dashboard_cache['data'] is not None and 
+            _dashboard_cache['timestamp'] is not None and
+            (current_time - _dashboard_cache['timestamp']) < CACHE_TTL):
+            cache_age_seconds = int(current_time - _dashboard_cache['timestamp'])
+            cache_age_hours = cache_age_seconds // 3600
+            cache_age_minutes = (cache_age_seconds % 3600) // 60
+            print(f"[CACHE] 대시보드 데이터 캐시 히트 (캐시 나이: {cache_age_hours}시간 {cache_age_minutes}분)")
+            return jsonify(_dashboard_cache['data']), 200
+        
+        # 캐시가 없거나 만료된 경우 새로 계산
+        print("[CACHE] 대시보드 데이터 새로 계산 및 캐시 업데이트")
+        service = PanelDataService()
         dashboard_data = service.get_dashboard_data()
+        
+        # 캐시 업데이트
+        _dashboard_cache['data'] = dashboard_data
+        _dashboard_cache['timestamp'] = current_time
         
         return jsonify(dashboard_data), 200
         
     except Exception as e:
+        print(f"[ERROR] 대시보드 데이터 조회 오류: {e}")
+        print(f"[ERROR] 트레이스백: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -80,6 +89,19 @@ def tool_db_config():
     try:
         return jsonify(Config.get_db_config()), 200
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/health', methods=['GET'])
+def get_health():
+    """데이터 품질 진단 데이터 조회"""
+    try:
+        service = PanelDataService()
+        health_data = service.get_health_data()
+        return jsonify(health_data), 200
+    except Exception as e:
+        print(f"[ERROR] 데이터 품질 진단 오류: {e}")
+        print(f"[ERROR] 트레이스백: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -1,10 +1,184 @@
 """LLM 연동 라우트"""
 from flask import Blueprint, request, jsonify
-from app.services.llm_service import LlmService
-from app.services.vector_search_service import VectorSearchService
+from app.services.llm.client import LlmService
+from app.services.data.vector import VectorSearchService
+from app.services.data.executor import execute_sql_safe
 
 
 bp = Blueprint('llm', __name__, url_prefix='/api/llm')
+
+
+def handle_analytical_query(question: str, classification_result: dict, llm_service: LlmService, model: str = None):
+    """
+    분석 질문 처리 (연령대별/성별별/지역별 분포 분석)
+    
+    예: "할인이나 포인트 멤버쉽 적립을 많이 애용하는 연령대는?"
+    """
+    try:
+        search_text = classification_result.get('search_text')
+        group_by = classification_result.get('group_by')  # 'age_range', 'gender', 'region'
+        analysis_type = classification_result.get('analysis_type', 'distribution')
+        
+        if not search_text:
+            return jsonify({
+                'error': '분석 질문에는 search_text가 필요합니다.',
+                'classification_result': classification_result
+            }), 400
+        
+        vector_service = VectorSearchService()
+        
+        print(f"[DEBUG] Analytical 쿼리 - 검색 텍스트: {search_text}")
+        print(f"[DEBUG] 집계 기준: {group_by}")
+        print(f"[DEBUG] 분석 유형: {analysis_type}")
+        
+        # 유사도 임계값 적용 (정확도 향상 패치)
+        # 분석 질문은 기본적으로 더 엄격하게
+        distance_threshold = 0.68
+        
+        # 1. 의미 기반 검색으로 관련 패널 찾기 (core_v2 스키마)
+        # execute_hybrid_search_sql 사용 (필터 없이 의미 검색만)
+        search_results = vector_service.execute_hybrid_search_sql(
+            embedding_input=search_text,
+            filters=None,  # 분석 질문은 필터 없음
+            limit=1000,  # 분석을 위해 충분한 데이터 필요
+            distance_threshold=distance_threshold
+        )
+        
+        if not search_results or len(search_results) == 0:
+            return jsonify({
+                'type': 'analytical',
+                'search_text': search_text,
+                'group_by': group_by,
+                'analysis_type': analysis_type,
+                'results': [],
+                'distribution': [],
+                'summary': '검색 결과가 없어 분석할 수 없습니다.'
+            }), 200
+        
+        print(f"[DEBUG] 검색된 패널 수: {len(search_results)}")
+        
+        # 2. 검색된 패널의 respondent_id 추출 (core_v2에서는 직접 반환됨)
+        respondent_ids = [str(r.get('respondent_id', '')) for r in search_results if r.get('respondent_id')]
+        
+        if not respondent_ids:
+            return jsonify({
+                'type': 'analytical',
+                'search_text': search_text,
+                'group_by': group_by,
+                'analysis_type': analysis_type,
+                'results': [],
+                'distribution': [],
+                'summary': 'respondent_id를 찾을 수 없어 분석할 수 없습니다.'
+            }), 200
+        
+        # 3. respondent_id로 실제 패널 정보 조회 및 집계 (core_v2 스키마)
+        # SQL 인젝션 방지를 위해 파라미터 바인딩 사용
+        respondent_ids_placeholders = ', '.join([f'%(respondent_id_{i})s' for i in range(len(respondent_ids))])
+        params = {f'respondent_id_{i}': rid for i, rid in enumerate(respondent_ids)}
+        
+        # GROUP BY 기준에 따라 집계 쿼리 생성 (core_v2.respondent 사용)
+        if group_by == 'age_range':
+            # 연령대별 집계 (birth_year 사용)
+            aggregation_sql = f"""
+                SELECT 
+                    CASE 
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 10 AND 19 THEN '10대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 20 AND 29 THEN '20대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 30 AND 39 THEN '30대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 40 AND 49 THEN '40대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 50 AND 59 THEN '50대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= 60 THEN '60대+'
+                        ELSE '기타'
+                    END AS age_group,
+                    COUNT(*) AS count
+                FROM core_v2.respondent
+                WHERE respondent_id IN ({respondent_ids_placeholders})
+                  AND birth_year IS NOT NULL
+                GROUP BY age_group
+                ORDER BY count DESC
+            """
+        elif group_by == 'gender':
+            # 성별별 집계
+            aggregation_sql = f"""
+                SELECT 
+                    gender AS gender_group,
+                    COUNT(*) AS count
+                FROM core_v2.respondent
+                WHERE respondent_id IN ({respondent_ids_placeholders})
+                  AND gender IS NOT NULL
+                GROUP BY gender
+                ORDER BY count DESC
+            """
+        elif group_by == 'region':
+            # 지역별 집계 (상위 10개)
+            aggregation_sql = f"""
+                SELECT 
+                    region AS region_group,
+                    COUNT(*) AS count
+                FROM core_v2.respondent
+                WHERE respondent_id IN ({respondent_ids_placeholders})
+                  AND region IS NOT NULL
+                GROUP BY region
+                ORDER BY count DESC
+                LIMIT 10
+            """
+        else:
+            return jsonify({
+                'error': f'지원하지 않는 집계 기준입니다: {group_by}',
+                'classification_result': classification_result
+            }), 400
+        
+        # 집계 쿼리 실행
+        distribution_results = execute_sql_safe(
+            query=aggregation_sql,
+            params=params,
+            limit=20
+        )
+        
+        print(f"[DEBUG] 집계 결과: {distribution_results}")
+        
+        # 4. 결과 요약 생성
+        if distribution_results:
+            # 가장 많은 그룹 찾기
+            if analysis_type == 'most_frequent':
+                top_group = distribution_results[0]
+                group_name = top_group.get(list(top_group.keys())[0])
+                count = top_group.get('count', 0)
+                total = sum(r.get('count', 0) for r in distribution_results)
+                percentage = (count / total * 100) if total > 0 else 0
+                
+                summary = f"{search_text}와 관련된 패널 중 {group_name}이(가) {count}명({percentage:.1f}%)로 가장 많습니다."
+            else:
+                # 분포 요약
+                total = sum(r.get('count', 0) for r in distribution_results)
+                dist_summary = ", ".join([
+                    f"{r.get(list(r.keys())[0])}: {r.get('count', 0)}명({r.get('count', 0)/total*100:.1f}%)"
+                    for r in distribution_results[:5]
+                ])
+                summary = f"{search_text}와 관련된 패널 분포: {dist_summary} (총 {total}명)"
+        else:
+            summary = "집계 결과가 없습니다."
+        
+        return jsonify({
+            'type': 'analytical',
+            'search_text': search_text,
+            'group_by': group_by,
+            'analysis_type': analysis_type,
+            'results': search_results[:10],  # 샘플 결과
+            'distribution': distribution_results,
+            'summary': summary,
+            'total_matched': len(search_results)
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[ERROR] Analytical 쿼리 처리 실패: {e}")
+        print(f"[ERROR] 상세 오류:\n{error_trace}")
+        return jsonify({
+            'error': f'분석 쿼리 처리 실패: {str(e)}',
+            'type': 'analytical_error'
+        }), 500
 
 
 @bp.route('/ask', methods=['POST'])
@@ -63,275 +237,27 @@ def list_models():
         return jsonify({'error': str(e)}), 500
 
 
-@bp.route('/semantic_search', methods=['POST'])
-def semantic_search():
-    """
-    core.doc_embedding 테이블을 사용한 의미 기반 검색
-    
-    요청 형식:
-    {
-        "question": "사용자 질문"
-    }
-    
-    응답 형식:
-    {
-        "sql": "생성된 SQL 쿼리",
-        "results": [...],
-        "summary": "결과 요약"
-    }
-    """
+@bp.route('/current_model', methods=['GET'])
+def get_current_model():
+    """현재 사용 중인 기본 Claude 모델 확인"""
     try:
-        data = request.get_json(force=True) or {}
-        question = data.get('question', '').strip()
-        model = data.get('model', None)
-        
-        if not question:
-            return jsonify({'error': 'question이 필요합니다.'}), 400
-        
-        # 질문에 "총 몇명", "몇명", "개수" 등이 포함되어 있으면 LIMIT 제거
-        count_keywords = ['총 몇명', '몇명', '개수', '몇 개', '총 몇', '전체 몇', '모두 몇', '몇 명', '총 몇 명']
-        is_count_query = any(keyword in question for keyword in count_keywords)
-        # COUNT 쿼리인 경우 LIMIT을 None으로 설정 (제한 없음)
-        # 일반 쿼리는 기본값 10 사용
-        search_limit = None if is_count_query else 10
-        
-        # 1. LLM으로 SQL 쿼리 생성
-        llm_service = LlmService()
-        sql_result = llm_service.generate_semantic_search_sql(question, model=model)
-        
-        if 'error' in sql_result:
-            return jsonify(sql_result), 500
-        
-        query_type = sql_result.get('type', 'semantic')
-        
-        # 구조화된 쿼리인 경우 (의미 검색 없음)
-        if query_type == 'structured':
-            sql_query = sql_result.get('sql', '')
-            if not sql_query:
-                return jsonify({
-                    'error': 'SQL 쿼리가 없습니다.',
-                    'sql_result': sql_result
-                }), 500
-            
-            # 직접 SQL 실행
-            from app.services.sql_service import execute_sql_safe
-            try:
-                search_results = execute_sql_safe(
-                    query=sql_query,
-                    params={},
-                    limit=10000  # 구조화된 쿼리는 최대 10000개
-                )
-            except Exception as e:
-                import traceback
-                print(f"[ERROR] 구조화된 쿼리 실행 실패: {e}")
-                print(f"[ERROR] 상세 오류:\n{traceback.format_exc()}")
-                return jsonify({
-                    'error': f'SQL 실행 실패: {str(e)}',
-                    'type': 'sql_error'
-                }), 500
-            
-            # 구조화된 쿼리는 요약 없이 결과만 반환
-            return jsonify({
-                'type': 'structured',
-                'filters': sql_result.get('filters', {}),
-                'sql': sql_query,
-                'results': search_results,
-                'result_count': len(search_results)
-            }), 200
-        
-        # hybrid 쿼리인 경우 (구조적 필터 + 의미 검색)
-        if query_type == 'hybrid':
-            search_text = sql_result.get('search_text', question)
-            sql_query = sql_result.get('sql', '')
-            filters = sql_result.get('filters', {})
-            
-            if not sql_query or '<VECTOR>' not in sql_query:
-                return jsonify({
-                    'error': 'SQL 쿼리에 <VECTOR> 플레이스홀더가 없습니다.',
-                    'sql_result': sql_result
-                }), 500
-            
-            # 임베딩 생성 및 SQL 실행
-            vector_service = VectorSearchService()
-            
-            print(f"[DEBUG] Hybrid 쿼리 - 생성된 SQL: {sql_query[:200]}...")
-            print(f"[DEBUG] 검색 텍스트: {search_text}")
-            print(f"[DEBUG] 필터: {filters}")
-            
-            try:
-                # COUNT 쿼리인 경우 유사도 임계값 적용
-                distance_threshold = 0.5 if is_count_query else None
-                
-                search_results = vector_service.execute_semantic_search_sql(
-                    sql_query=sql_query,
-                    embedding_input=search_text,
-                    limit=search_limit,
-                    distance_threshold=distance_threshold
-                )
-                print(f"[DEBUG] 검색 결과 개수: {len(search_results) if search_results else 0}")
-                
-                # 전체 개수 계산 (구조적 필터만 적용)
-                total_count = 0
-                try:
-                    from app.services.sql_service import execute_sql_safe
-                    # WHERE 조건만 추출하여 COUNT 쿼리 생성
-                    where_clause = ""
-                    if filters.get('gender'):
-                        where_clause += f" AND v.gender = '{filters['gender']}'"
-                    if filters.get('age'):
-                        age = filters['age']
-                        if age == '30s':
-                            where_clause += " AND (v.age_text LIKE '%만 30%' OR v.age_text LIKE '%만 31%' OR v.age_text LIKE '%만 32%' OR v.age_text LIKE '%만 33%' OR v.age_text LIKE '%만 34%' OR v.age_text LIKE '%만 35%' OR v.age_text LIKE '%만 36%' OR v.age_text LIKE '%만 37%' OR v.age_text LIKE '%만 38%' OR v.age_text LIKE '%만 39%')"
-                        elif age == '20s':
-                            where_clause += " AND (v.age_text LIKE '%만 20%' OR v.age_text LIKE '%만 21%' OR v.age_text LIKE '%만 22%' OR v.age_text LIKE '%만 23%' OR v.age_text LIKE '%만 24%' OR v.age_text LIKE '%만 25%' OR v.age_text LIKE '%만 26%' OR v.age_text LIKE '%만 27%' OR v.age_text LIKE '%만 28%' OR v.age_text LIKE '%만 29%')"
-                        elif age == '40s':
-                            where_clause += " AND (v.age_text LIKE '%만 40%' OR v.age_text LIKE '%만 41%' OR v.age_text LIKE '%만 42%' OR v.age_text LIKE '%만 43%' OR v.age_text LIKE '%만 44%' OR v.age_text LIKE '%만 45%' OR v.age_text LIKE '%만 46%' OR v.age_text LIKE '%만 47%' OR v.age_text LIKE '%만 48%' OR v.age_text LIKE '%만 49%')"
-                    if filters.get('region'):
-                        where_clause += f" AND v.region = '{filters['region']}'"
-                    
-                    if where_clause:
-                        count_sql = f"SELECT COUNT(*) as total FROM core.doc_embedding_view v WHERE 1=1 {where_clause}"
-                        count_result = execute_sql_safe(count_sql, {}, limit=1)
-                        if count_result and len(count_result) > 0:
-                            total_count = count_result[0].get('total', 0)
-                            print(f"[DEBUG] 구조적 필터만 적용한 전체 개수: {total_count}")
-                except Exception as count_error:
-                    print(f"[WARN] 전체 개수 계산 실패: {count_error}")
-                    total_count = None
-                    
-            except Exception as e:
-                import traceback
-                print(f"[ERROR] Hybrid 검색 실행 실패: {e}")
-                print(f"[ERROR] 상세 오류:\n{traceback.format_exc()}")
-                raise
-            
-            # 결과 요약
-            if search_results:
-                summary_prompt = f"""다음은 데이터베이스 하이브리드 검색 결과입니다:
-
-질문: {question}
-필터: {filters}
-
-검색 결과:
-{str(search_results)[:2000]}
-
-위 검색 결과를 바탕으로 사용자의 질문에 대한 답변을 자연스러운 한국어로 요약해주세요."""
-                
-                summary_response = llm_service.client.messages.create(
-                    model=model or llm_service.get_default_model(),
-                    max_tokens=512,
-                    temperature=0,
-                    messages=[
-                        {"role": "user", "content": summary_prompt}
-                    ],
-                )
-                summary = "\n".join(getattr(c, "text", "") for c in summary_response.content if getattr(c, "type", None) == "text")
-            else:
-                summary = "검색 결과가 없습니다."
-            
-            return jsonify({
-                    'type': 'hybrid',
-                    'search_text': search_text,
-                    'filters': filters,
-                    'sql': sql_query,
-                    'results': search_results,
-                    'summary': summary,
-                    'result_count': len(search_results),
-                    'total_count': total_count  # 구조적 필터만 적용한 전체 개수
-                }), 200
-        
-        # 의미 검색 쿼리인 경우 (semantic)
-        search_text = sql_result.get('search_text', question)
-        sql_query = sql_result.get('sql', '')
-        
-        if not sql_query or '<VECTOR>' not in sql_query:
-            return jsonify({
-                'error': 'SQL 쿼리에 <VECTOR> 플레이스홀더가 없습니다.',
-                'sql_result': sql_result
-            }), 500
-        
-        # 2. 임베딩 생성 및 SQL 실행 (로컬 모델 사용)
-        vector_service = VectorSearchService()
-        
-        # 디버깅: 생성된 SQL 로그
-        print(f"[DEBUG] 생성된 SQL: {sql_query[:200]}...")
-        print(f"[DEBUG] 검색 텍스트: {search_text}")
-        
-        try:
-            # COUNT 쿼리인 경우 유사도 임계값 적용 (관련성 높은 결과만 카운트)
-            # 코사인 거리: 0에 가까울수록 유사, 1에 가까울수록 다름
-            # distance < 0.5 정도면 유사하다고 볼 수 있음
-            distance_threshold = 0.5 if is_count_query else None
-            
-            search_results = vector_service.execute_semantic_search_sql(
-                sql_query=sql_query,
-                embedding_input=search_text,
-                limit=search_limit,
-                distance_threshold=distance_threshold
-            )
-            print(f"[DEBUG] 검색 결과 개수: {len(search_results) if search_results else 0}")
-            
-            # 의미 검색의 경우 전체 개수 계산
-            # COUNT 쿼리인 경우 유사도 임계값을 적용한 결과 개수를 전체 개수로 사용
-            # 일반 쿼리인 경우도 반환된 결과 개수를 사용 (LIMIT이 적용되었을 수 있음)
-            total_count = len(search_results) if search_results else 0
-            
-            # COUNT 쿼리이고 결과가 LIMIT에 도달했다면, 더 많은 결과가 있을 수 있음을 표시
-            # search_limit이 None이 아닌 경우에만 비교
-            if is_count_query and search_limit is not None and total_count >= search_limit:
-                print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (LIMIT {search_limit}에 도달, 더 많은 결과가 있을 수 있음)")
-            elif is_count_query and search_limit is None:
-                if distance_threshold:
-                    print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (유사도 임계값: distance < {distance_threshold})")
-                else:
-                    print(f"[INFO] COUNT 쿼리: {total_count}개 결과 반환 (LIMIT 없음 - 전체 결과)")
-            
-        except Exception as e:
-            import traceback
-            print(f"[ERROR] 검색 실행 실패: {e}")
-            print(f"[ERROR] 상세 오류:\n{traceback.format_exc()}")
-            raise
-        
-        # 3. 결과 요약 (LLM 사용)
-        if search_results:
-            summary_prompt = f"""다음은 데이터베이스 의미 검색 결과입니다:
-
-질문: {question}
-
-검색 결과:
-{str(search_results)[:2000]}  # 결과가 너무 길면 잘라냄
-
-위 검색 결과를 바탕으로 사용자의 질문에 대한 답변을 자연스러운 한국어로 요약해주세요."""
-            
-            summary_response = llm_service.client.messages.create(
-                model=model or llm_service.get_default_model(),
-                max_tokens=512,
-                temperature=0,
-                messages=[
-                    {"role": "user", "content": summary_prompt}
-                ],
-            )
-            summary = "\n".join(getattr(c, "text", "") for c in summary_response.content if getattr(c, "type", None) == "text")
-        else:
-            summary = "검색 결과가 없습니다."
+        svc = LlmService()
+        current_model = svc.get_default_model()
+        # 환경변수에서 실제 설정값 확인
+        import os
+        env_model = os.environ.get("ANTHROPIC_MODEL")
         
         return jsonify({
-            'type': 'semantic',
-            'search_text': search_text,
-            'sql': sql_query,
-            'results': search_results,
-            'summary': summary,
-            'result_count': len(search_results),
-            'total_count': total_count  # 의미 검색 결과 개수 (의미 검색은 유사도 기반)
+            'current_model': current_model,
+            'source': 'environment_variable' if env_model else 'default',
+            'environment_variable': env_model if env_model else None,
+            'default_value': 'claude-sonnet-4-5' if not env_model else None
         }), 200
-        
-    except RuntimeError as e:
-        return jsonify({'error': str(e), 'type': 'configuration_error'}), 500
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"의미 검색 오류: {error_trace}")
-        return jsonify({'error': str(e), 'type': type(e).__name__}), 500
+        return jsonify({'error': str(e)}), 500
+
+
+# semantic_search 엔드포인트 제거됨 - 통합 검색 /api/search로 대체됨
 
 
 @bp.route('/test_embeddings', methods=['GET'])
@@ -349,8 +275,8 @@ def test_embeddings():
     }
     """
     try:
-        from app.services.sql_service import execute_sql_safe
-        from app.services.vector_search_service import VectorSearchService
+        from app.services.data.executor import execute_sql_safe
+        from app.services.data.vector import VectorSearchService
         
         result = {
             "table_exists": False,
@@ -366,7 +292,7 @@ def test_embeddings():
                 query="""
                     SELECT table_schema, table_name 
                     FROM information_schema.tables 
-                    WHERE table_schema = 'core' AND table_name = 'doc_embedding'
+                    WHERE table_schema = 'core_v2' AND table_name = 'panel_embedding'
                 """,
                 limit=1
             )
@@ -380,7 +306,7 @@ def test_embeddings():
         # 2. 데이터 개수 확인
         try:
             count_result = execute_sql_safe(
-                query="SELECT COUNT(*) as cnt FROM core.doc_embedding",
+                query="SELECT COUNT(*) as cnt FROM core_v2.panel_embedding",
                 limit=1
             )
             if count_result:
@@ -393,7 +319,7 @@ def test_embeddings():
             sample = execute_sql_safe(
                 query="""
                     SELECT embedding::text as embedding_str
-                    FROM core.doc_embedding
+                    FROM core_v2.panel_embedding
                     WHERE embedding IS NOT NULL
                     LIMIT 1
                 """,
@@ -411,16 +337,16 @@ def test_embeddings():
         try:
             samples = execute_sql_safe(
                 query="""
-                    SELECT id, content
-                    FROM core.doc_embedding
+                    SELECT respondent_id, embedding::text as embedding_preview
+                    FROM core_v2.panel_embedding
                     LIMIT 5
                 """,
                 limit=5
             )
             result["samples"] = [
                 {
-                    "id": s.get('id'),
-                    "content_preview": (s.get('content', '')[:100] + '...') if s.get('content') and len(s.get('content', '')) > 100 else s.get('content', '')
+                    "respondent_id": s.get('respondent_id'),
+                    "embedding_preview": (s.get('embedding_preview', '')[:100] + '...') if s.get('embedding_preview') and len(s.get('embedding_preview', '')) > 100 else s.get('embedding_preview', '')
                 }
                 for s in samples
             ]

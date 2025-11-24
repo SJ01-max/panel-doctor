@@ -22,7 +22,7 @@ export default function NotFound() {
             <i className="ri-arrow-left-line mr-2"></i>
             이전 페이지
           </Button>
-          <Button onClick={() => navigate('/')}>
+          <Button onClick={() => navigate('/dashboard')}>
             <i className="ri-home-line mr-2"></i>
             홈으로 가기
           </Button>

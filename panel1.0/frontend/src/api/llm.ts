@@ -1,10 +1,27 @@
 import apiClient from '../lib/api/client';
 
+export interface Persona {
+  name: string;
+  age_gender: string;
+  quote: string;
+  description: string;
+  tags: string[];
+}
+
 export interface LlmSqlResponse {
   answer: string;
   rows?: Record<string, unknown>[];
   count?: number;
   tool_called?: boolean;
+  persona?: Persona;
+  widgets?: Array<{
+    title: string;
+    value: string;
+    percentage?: number;
+    count?: number;
+    icon?: string;
+    color?: string;
+  }>;
 }
 
 export interface ConversationMessage {
