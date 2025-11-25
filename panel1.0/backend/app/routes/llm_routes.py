@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 from app.services.llm.client import LlmService
 from app.services.data.vector import VectorSearchService
 from app.services.data.executor import execute_sql_safe
+import time
 
 
 bp = Blueprint('llm', __name__, url_prefix='/api/llm')
@@ -201,7 +202,10 @@ def ask():
 @bp.route('/sql_search', methods=['POST'])
 def sql_search():
     try:
+        t0 = time.perf_counter()
         data = request.get_json(force=True) or {}
+        t1 = time.perf_counter()
+        
         prompt = data.get('prompt', '').strip()
         # 기본 모델은 LlmService의 기본값 사용 (claude-3-5-haiku-latest)
         model = data.get('model', None)  # None이면 LlmService에서 기본값 사용
@@ -210,13 +214,28 @@ def sql_search():
         if not prompt:
             return jsonify({'error': 'prompt가 필요합니다.'}), 400
 
+        print(f"[PERF][SQL] sql_search START prompt='{prompt[:50]}'")
+        print(f"[PERF][SQL] 1. read_request / parse_json: {t1 - t0:.3f}s")
+        
+        t2_start = time.perf_counter()
         svc = LlmService()
+        t2_end = time.perf_counter()
+        print(f"[PERF][SQL] 2. LlmService init: {t2_end - t2_start:.3f}s")
+        
+        t3_start = time.perf_counter()
         res = svc.ask_for_sql_rows(
             prompt, 
             model=model, 
             conversation_history=conversation_history,
             panel_search_result=panel_search_result
         )
+        t3_end = time.perf_counter()
+        print(f"[PERF][SQL] 3. ask_for_sql_rows (LLM+SQL+DB): {t3_end - t3_start:.3f}s")
+
+        t_end = time.perf_counter()
+        print(f"[PERF][SQL] total: {t_end - t0:.3f}s")
+        print(f"[PERF][SQL] sql_search END")
+        
         return jsonify(res), 200
     except RuntimeError as e:
         # API 키 누락 등 초기화 오류

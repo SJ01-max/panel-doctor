@@ -127,6 +127,21 @@ class SearchService:
         result["selected_strategy"] = strategy
         result["strategy_info"] = self.selector.get_strategy_info(strategy)
         
+        try:
+            sample = result.get("results", [])[:5]
+        except Exception:
+            sample = []
+        
+        print("[DEBUG] === 검색 디버그 요약 ===")
+        print(f"  raw_query        : {user_query}")
+        # 나중에 3-1 '질의 보정' 단계 만들면 여기에 normalized_query 추가하면 됨
+        print(f"  filters          : {parsed.get('filters')}")
+        print(f"  semantic_keywords: {parsed.get('semantic_keywords')}")
+        print(f"  selected_strategy: {strategy}")
+        print(f"  result_count     : {result.get('count')}")
+        print(f"  sample_results   : {sample}")
+        print("[DEBUG] ========================")
+        
         print(f"[DEBUG] ========== 최종 결과 ==========")
         print(f"  전략: {strategy}")
         print(f"  결과 개수: {result.get('count', 0)}")
