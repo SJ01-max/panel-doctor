@@ -58,7 +58,7 @@ class HybridSearch(SearchStrategy):
             # limit이 없으면 구조적 필터만으로 먼저 카운트를 구함
             # 통계 정확도를 위해 DEFAULT_LIMIT = 1000 유지
             # 하이브리드 검색은 구조적 필터 + 벡터 검색이므로 충분한 샘플 필요
-            DEFAULT_LIMIT = 1000
+            DEFAULT_LIMIT = 36000
             effective_limit = limit if limit is not None else DEFAULT_LIMIT
             
             # 하이브리드 검색 실행 (core_v2 스키마)

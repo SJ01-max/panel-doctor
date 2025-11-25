@@ -6,10 +6,10 @@
 """
 from flask import Blueprint, request, jsonify
 from app.services.search.service import SearchService
-
+import time
 
 bp = Blueprint('search', __name__, url_prefix='/api')
-
+search_service = SearchService()
 
 @bp.route('/search', methods=['POST'])
 def search():
@@ -32,6 +32,9 @@ def search():
         "strategy_info": {...}
     }
     """
+    
+    t0 = time.perf_counter()
+    
     try:
         data = request.get_json(force=True) or {}
         query = data.get('query', '').strip()
@@ -43,8 +46,12 @@ def search():
                 'message': '자연어 질의를 입력해주세요.'
             }), 400
         
+        t1 = time.perf_counter()
+        result = search_service.search(user_query=query, model=model)
+        t2 = time.perf_counter()
+        
         # 통합 검색 서비스 실행
-        search_service = SearchService()
+        #search_service = SearchService()
         result = search_service.search(user_query=query, model=model)
         
         return jsonify(result), 200

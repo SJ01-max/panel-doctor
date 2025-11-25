@@ -33,7 +33,7 @@ class LlmStructuredParser:
             }
         """
         if not model:
-            model = self.llm_service.get_default_model()
+            model = self.llm_service.get_parser_model()
         
         try:
             response = self.llm_service.client.messages.create(
