@@ -39,17 +39,13 @@ class LlmService(Singleton):
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 필요합니다.")
         self.client = Anthropic(api_key=api_key)
         env_model = os.environ.get("ANTHROPIC_MODEL")
-        self._default_model = env_model if env_model else "claude-opus-4-1"
-        self._parser_model = "claude-haiku-4-5"
+        self._default_model = env_model if env_model else "claude-sonnet-4-5"
         print(f"[INFO] [SINGLETON] LlmService 초기화: 사용 중인 Claude 모델 = {self._default_model}")
         
         LlmService._initialized = True
 
     def get_default_model(self) -> str:
         return self._default_model
-    
-    def get_parser_model(self) -> str:
-        return self._parser_model
     
     def _get_db_schema_info(self) -> str:
         """실제 DB 스키마 정보를 문자열로 반환"""
@@ -99,7 +95,7 @@ class LlmService(Singleton):
 
     def ask_with_tools(self, user_prompt: str, model: str | None = None) -> Dict[str, Any]:
         if not model:
-            model = self.get_parser_model()
+            model = self.get_default_model()
         
         initial = self.client.messages.create(
             model=model,
@@ -163,7 +159,7 @@ class LlmService(Singleton):
 
     def ask_for_sql_rows(self, user_prompt: str, model: str | None = None, conversation_history: List[Dict[str, Any]] | None = None, panel_search_result: Dict[str, Any] | None = None) -> Dict[str, Any]:
         if not model:
-            model = self.get_parser_model()
+            model = self.get_default_model()
         
         db_schema = self._get_db_schema_info()
         

@@ -9,7 +9,7 @@ from app.services.search.strategy.selector import StrategySelector
 from app.services.search.strategy.filter_first import FilterFirstSearch
 from app.services.search.strategy.semantic_first import SemanticFirstSearch
 from app.services.search.strategy.hybrid import HybridSearch
-import time
+
 
 class SearchService:
     """통합 검색 서비스"""
@@ -61,34 +61,16 @@ class SearchService:
         Returns:
             검색 결과 딕셔너리
         """
-        
-        t0 = time.perf_counter()
-        print(
-            f"[PERF] SearchService.search START "
-            f"query='{user_query[:50]}' model='{model}'"
-        )
-        
         print(f"[DEBUG] ========== 검색 시작 ==========")
         print(f"[DEBUG] 사용자 질의: {user_query}")
-        
-        parse_start = time.perf_counter()
         parsed = self.parser.parse(user_query, model)
-        parse_end = time.perf_counter()
-        print(f"[PERF] 1: LLM parse: {parse_end - parse_start:.3f}s")
-        
         print(f"[DEBUG] LLM 파싱 결과:")
         print(f"  filters: {parsed.get('filters')}")
         print(f"  semantic_keywords: {parsed.get('semantic_keywords')}")
         print(f"  limit: {parsed.get('limit')}")
         
         # 전략 선택
-        select_start = time.perf_counter()
         strategy = self.selector.select_search_mode(parsed)
-        select_end = time.perf_counter()
-        print(
-            f"[PERF] 2: strategy select: {select_end - select_start:.3f}s "
-            f"(strategy={strategy})"
-        )
         print(f"[DEBUG] 선택된 전략: {strategy}")
         
         filters = parsed.get("filters", {})
@@ -96,20 +78,13 @@ class SearchService:
         limit = parsed.get("limit")
         
         # 검색 실행
-        exec_start = time.perf_counter()
         result = self._execute_search(strategy, filters, semantic_keywords, limit)
-        exec_end = time.perf_counter()
-        print(
-            f"[PERF] 3: _execute_search({strategy}): "
-            f"{exec_end - exec_start:.3f}s"
-        )
         
         print(f"[DEBUG] 초기 검색 결과: count={result.get('count', 0)}, has_results={result.get('has_results', False)}")
         
         # Fallback 로직
         if not result.get("has_results") or result.get("count", 0) < min_results:
             print(f"[DEBUG] Fallback 검토: min_results={min_results}, 현재 결과={result.get('count', 0)}")
-            fb_start = time.perf_counter()
             result = self._try_fallback(
                 strategy,
                 filters,
@@ -117,10 +92,6 @@ class SearchService:
                 limit,
                 result
             )
-            fb_end = time.perf_counter()
-            print(f"[PERF] 4: _try_fallback: {fb_end - fb_start:.3f}s")
-        else:
-            print("[PERF] 4: _try_fallback: 실행 안 함 (충분한 결과)")
         
         # 결과에 메타데이터 추가
         result["parsed_query"] = parsed
@@ -131,12 +102,6 @@ class SearchService:
         print(f"  전략: {strategy}")
         print(f"  결과 개수: {result.get('count', 0)}")
         print(f"  ====================================")
-        
-        t_end = time.perf_counter()
-        print(
-            f"[PERF] SearchService.search END total={t_end - t0:.3f}s "
-            f"(strategy={strategy})"
-        )
         
         return result
     

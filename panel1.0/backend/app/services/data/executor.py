@@ -1,6 +1,6 @@
 """SQL 실행 유틸리티 (SELECT 전용, 안전장치 포함)"""
 from typing import Any, Dict, List, Sequence
-import re, time
+import re
 from contextlib import contextmanager
 from app.db.connection import get_db_connection, return_db_connection
 
@@ -44,12 +44,11 @@ def execute_sql_safe(
     statement_timeout_ms: int = 5000,
 ) -> List[Dict[str, Any]]:
     """
-    안전한 읽기 전용 SQL 실행 유틸리티
-    - SELECT/WITH 로 시작하는 쿼리만 허용
+    안전한 읽기 전용 SQL 실행 함수.
+    - SELECT/WITH만 허용
     - 세미콜론/주석 차단
-    - LIMIT 강제 적용
-    - statement_timeout_ms 적용
-    - [PERF] 실행 시간/row 수/쿼리 일부를 로그로 출력
+    - 서버측 statement_timeout 적용
+    - 결과는 최대 limit 행으로 제한
     """
     if not query:
         raise ValueError("쿼리가 비어 있습니다.")
@@ -58,28 +57,10 @@ def execute_sql_safe(
 
     limited_query = f"WITH _orig AS ({query}) SELECT * FROM _orig LIMIT {int(limit)}"
 
-    #실행시간 측정 시작
-    start = time.perf_counter()
-
     with _db_cursor_with_timeout(statement_timeout_ms) as (conn, cur):
         cur.execute(limited_query, params or None)
         columns = [desc[0] for desc in cur.description]
         rows = cur.fetchall()
-
-    elapsed = time.perf_counter() - start
-
-    #로그용 쿼리
-    sql_snippet = query.strip().replace("\n", " ")[:120]
-
-    print(
-        "[PERF] execute_sql_safe "
-        f"elapsed={elapsed:.3f}s, "
-        f"rows={len(rows)}, "
-        f"limit={limit}, timeout_ms={statement_timeout_ms}, "
-        f"sql='{sql_snippet}'"
-    )
-
-    result = [dict(zip(columns, row)) for row in rows]
-    return result
-
+        result = [dict(zip(columns, row)) for row in rows]
+        return result
 
