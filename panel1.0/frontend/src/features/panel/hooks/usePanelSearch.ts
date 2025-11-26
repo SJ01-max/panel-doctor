@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, startTransition } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { unifiedSearch, type UnifiedSearchResponse } from '../../../api/search';
 import { sqlSearch, type LlmSqlResponse } from '../../../api/llm';
@@ -98,12 +98,20 @@ export const usePanelSearch = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [activeFilters, setActiveFilters] = useState<Array<{ label: string; value: string }>>([]);
+  const [activeFilters, setActiveFilters] = useState<Array<{ label: string; value: string; type: string }>>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [widgets, setWidgets] = useState<any[]>([]);
   const [highlightFilter, setHighlightFilter] = useState<{ type: string; value: string } | null>(null);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
-  const [selectedPanelData, setSelectedPanelData] = useState<{ id: string; gender: string; age: string; region: string } | null>(null);
+  const [selectedPanelData, setSelectedPanelData] = useState<{ 
+    id: string; 
+    gender: string; 
+    age: string; 
+    region: string;
+    matchScore?: number;
+    content?: string;
+    semanticKeywords?: string[];
+  } | null>(null);
   const [allResults, setAllResults] = useState<any[]>([]); // 검색 결과를 별도 state로 관리
   const autoSearchExecuted = useRef(false);
   const currentUnifiedResultRef = useRef<UnifiedSearchResponse | null>(null); // 현재 unifiedResult를 ref로 저장
@@ -178,16 +186,18 @@ export const usePanelSearch = () => {
       
       if (unifiedResult && unifiedResult.has_results && unifiedResult.count > 0) {
         // ... (필터 설정 부분은 그대로 유지) ...
-        // 필터 칩 생성
-        const filters: Array<{ label: string; value: string }> = [];
-        if (unifiedResult.parsed_query.filters.age) {
-          filters.push({ label: '연령', value: unifiedResult.parsed_query.filters.age });
+        // 필터 칩 생성 (age 또는 age_range 모두 지원)
+        const parsedFilters = unifiedResult.parsed_query?.filters || {};
+        const ageFilter = (parsedFilters.age || parsedFilters.age_range) as string | undefined;
+        const filters: Array<{ label: string; value: string; type: string }> = [];
+        if (ageFilter) {
+          filters.push({ label: '연령', value: ageFilter, type: 'age' });
         }
-        if (unifiedResult.parsed_query.filters.gender) {
-          filters.push({ label: '성별', value: unifiedResult.parsed_query.filters.gender });
+        if (parsedFilters.gender) {
+          filters.push({ label: '성별', value: parsedFilters.gender as string, type: 'gender' });
         }
-        if (unifiedResult.parsed_query.filters.region) {
-          filters.push({ label: '지역', value: unifiedResult.parsed_query.filters.region });
+        if (parsedFilters.region) {
+          filters.push({ label: '지역', value: parsedFilters.region as string, type: 'region' });
         }
         setActiveFilters(filters);
 
@@ -195,24 +205,21 @@ export const usePanelSearch = () => {
         const results = unifiedResult.results || [];
         currentUnifiedResultRef.current = unifiedResult;
         
-        // React 18 startTransition (선택사항이지만 권장)
-        startTransition(() => {
-          setAllResults(results);
-          setSearchResult({
-            unified: unifiedResult,
-            llm: undefined // 기존 페르소나 데이터 초기화
-          });
-          
-          // ★★★ 여기가 핵심 수정 포인트입니다 ★★★
-          // 1. 분석 로딩을 "먼저" 켭니다. (방어막 구축)
-          setIsAnalyzing(true); 
-          
-          // 2. 그 다음 화면 로딩을 끕니다. (방어막이 쳐진 상태에서 화면 오픈)
-          setIsSearching(false);
-          setHasSearched(true);
+        // startTransition 제거 - 즉시 렌더링
+        setAllResults(results);
+        setSearchResult({
+          unified: unifiedResult,
+          llm: undefined // 기존 페르소나 데이터 초기화
         });
+        
+        // 1. 분석 상태 먼저 켜기 (방어막 구축)
+        setIsAnalyzing(true);
+        
+        // 2. 검색 로딩 끄기 (이 시점에 무조건 리렌더링 발생)
+        setIsSearching(false);
+        setHasSearched(true);
 
-        // 3. 비동기 호출
+        // 3. 그 다음 비동기 호출
         loadInsightAsync(queryToUse.trim(), unifiedResult).catch(err => {
           console.warn('AI 분석 실패:', err);
           setIsAnalyzing(false); // 실패 시에만 로딩 끄기
@@ -254,6 +261,26 @@ export const usePanelSearch = () => {
         .sort((a, b) => b.value - a.value);
 
       // LLM에 전달할 통계 정보 구성
+      // 필터 키가 age 또는 age_range일 수 있으므로 둘 다 확인
+      const filters = unifiedResult.parsed_query?.filters || {};
+      const ageFilter = filters.age || filters.age_range;
+      
+      // extractedChips 구성: 필터 정보와 semantic_keywords 모두 포함
+      const extractedChips: string[] = [];
+      if (ageFilter) {
+        extractedChips.push(String(ageFilter));
+      }
+      if (filters.gender) {
+        extractedChips.push(String(filters.gender));
+      }
+      if (filters.region) {
+        extractedChips.push(String(filters.region));
+      }
+      // 하이브리드 전략의 경우 semantic_keywords도 추가
+      if (unifiedResult.parsed_query?.semantic_keywords) {
+        extractedChips.push(...unifiedResult.parsed_query.semantic_keywords);
+      }
+      
       const panelSearchResult = {
         estimatedCount: unifiedResult.count || allResults.length,
         distributionStats: {
@@ -261,12 +288,14 @@ export const usePanelSearch = () => {
           age: ageData.map(d => ({ label: d.name, value: d.value })),
           region: regionData.map(d => ({ label: d.name, value: d.value }))
         },
-        extractedChips: [
-          ...(unifiedResult.parsed_query.filters.age ? [`${unifiedResult.parsed_query.filters.age}`] : []),
-          ...(unifiedResult.parsed_query.filters.gender ? [`${unifiedResult.parsed_query.filters.gender}`] : []),
-          ...(unifiedResult.parsed_query.filters.region ? [`${unifiedResult.parsed_query.filters.region}`] : [])
-        ]
+        extractedChips: extractedChips
       };
+      
+      console.log('[🤖 AI] panelSearchResult 구성 완료:', {
+        estimatedCount: panelSearchResult.estimatedCount,
+        extractedChipsCount: panelSearchResult.extractedChips.length,
+        hasDistributionStats: !!panelSearchResult.distributionStats
+      });
 
       console.log('[🤖 AI] sqlSearch API 호출 시작...');
       const llmResponse = await sqlSearch(query, undefined, undefined, panelSearchResult);
@@ -337,58 +366,23 @@ export const usePanelSearch = () => {
   };
 
   const handleDownloadExcel = async () => {
-    if (!searchResult?.unified?.results || allResults.length === 0) {
-      alert('다운로드할 데이터가 없습니다.');
+    if (!query || query.trim() === '') {
+      alert('검색 쿼리가 없습니다. 검색 후 다운로드해주세요.');
       return;
     }
 
     try {
-      // 백엔드 API를 사용하여 내보내기 생성
-      const { createExport } = await import('../../../api/export');
+      // ★ Export API 사용: /api/panel/export 엔드포인트로 전체 데이터 다운로드
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const exportUrl = `${apiBaseUrl}/api/panel/export?q=${encodeURIComponent(query)}`;
       
-      // 검색 결과에서 필터 정보 추출
-      const filters: Record<string, any> = {};
-      if (activeFilters && activeFilters.length > 0) {
-        activeFilters.forEach(filter => {
-          // label을 기반으로 필터 타입 판단
-          if (filter.label.includes('연령') || filter.label.includes('나이')) {
-            filters.age_range = filter.value.replace('대', 's');
-          } else if (filter.label.includes('성별')) {
-            filters.gender = filter.value === '남성' ? 'M' : filter.value === '여성' ? 'F' : filter.value;
-          } else if (filter.label.includes('지역')) {
-            filters.region = filter.value;
-          }
-        });
-      }
-
-      const result = await createExport({
-        export_type: 'panel_search',
-        file_type: 'excel',
-        filters: filters,
-        description: `검색 결과 내보내기 - ${query || '전체 결과'}`,
-        metadata: {
-          query: query,
-          result_count: allResults.length,
-          filters: activeFilters,
-        },
-      });
-
-      alert(`내보내기가 시작되었습니다!\n파일명: ${result.file_name}\n내보내기 이력 페이지에서 확인할 수 있습니다.`);
+      // 새 창에서 다운로드 시작
+      window.location.href = exportUrl;
+      
+      console.log('[INFO] 패널 내보내기 시작:', exportUrl);
     } catch (error: any) {
       console.error('내보내기 실패:', error);
-      // 실패 시 기존 방식으로 fallback
-      const header = "respondent_id,gender,age,region\n";
-      const rows = searchResult.unified.results.map(r => 
-        `${r.respondent_id || r.doc_id || ''},${r.gender || ''},${r.age_text || ''},${r.region || ''}`
-      ).join('\n');
-      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header + rows;
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "panel_search_results.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      alert('내보내기 중 오류가 발생했습니다. 다시 시도해주세요.');
     }
   };
 

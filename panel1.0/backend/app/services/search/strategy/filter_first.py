@@ -65,7 +65,8 @@ class FilterFirstSearch(SearchStrategy):
         
         result_dict = {
             "results": results,
-            "count": total_count,  # 전체 개수 사용
+            "count": len(results),  # 반환된 결과 개수
+            "total_count": total_count,  # ★ TRUE Total matches in DB
             "strategy": "filter_first",
             "filters_applied": filters,
             "has_results": len(results) > 0,

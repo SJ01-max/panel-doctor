@@ -65,3 +65,30 @@ export const getHealthData = async (): Promise<HealthData> => {
     throw error;
   }
 };
+
+/**
+ * 패널 상세 정보 조회
+ * @param respondentId 패널 ID
+ * @returns 패널 상세 정보
+ */
+export interface PanelDetailData {
+  respondent_id: string;
+  gender: string;
+  birth_year: number | null;
+  age: number | null;
+  age_text: string | null;
+  region: string;
+  district: string | null;
+  json_doc: any; // JSON 문서 (파싱된 객체 또는 문자열)
+  last_response_date: string | null;
+}
+
+export const getPanelDetail = async (respondentId: string): Promise<PanelDetailData> => {
+  try {
+    const response = await apiClient.get(`/api/panel/detail/${respondentId}`);
+    return response.data;
+  } catch (error) {
+    console.error("패널 상세 정보 API 오류:", error);
+    throw error;
+  }
+};

@@ -32,8 +32,9 @@ def handle_analytical_query(question: str, classification_result: dict, llm_serv
         print(f"[DEBUG] 분석 유형: {analysis_type}")
         
         # 유사도 임계값 적용 (정확도 향상 패치)
-        # 분석 질문은 기본적으로 더 엄격하게
-        distance_threshold = 0.68
+        # LLM에게 데이터를 줄 때는 "확실한 근거"가 있는 데이터만 주는 게 좋음
+        # 0.35 ~ 0.55 구간의 S급~A급 데이터만 골라서 LLM에게 제공하여 퀄리티 향상
+        distance_threshold = 0.55
         
         # 1. 의미 기반 검색으로 관련 패널 찾기 (core_v2 스키마)
         # execute_hybrid_search_sql 사용 (필터 없이 의미 검색만)

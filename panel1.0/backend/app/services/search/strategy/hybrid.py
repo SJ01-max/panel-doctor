@@ -13,9 +13,14 @@ class HybridSearch(SearchStrategy):
     def __init__(self):
         print(f"[INFO] HybridSearch 초기화 - VectorSearchService Singleton 사용")
         self.vector_service = VectorSearchService()
-        self.distance_threshold = float(
-            os.environ.get("HYBRID_DISTANCE_THRESHOLD", "0.65")
-        )
+        # Hybrid Search는 SQL 필터(나이/성별/지역)가 이미 100% 정확하게 대상을 좁혀놨음
+        # 벡터 점수로 순서(Ranking)만 정렬하는 게 베스트이므로 기본값은 None (제한 없음)
+        # 필요시 환경변수로 0.75 (매우 헐겁게) 설정 가능
+        hybrid_threshold_env = os.environ.get("HYBRID_DISTANCE_THRESHOLD")
+        if hybrid_threshold_env:
+            self.distance_threshold = float(hybrid_threshold_env)
+        else:
+            self.distance_threshold = None  # 기본값: 제한 없음
     
     def search(
         self,
@@ -62,17 +67,30 @@ class HybridSearch(SearchStrategy):
             effective_limit = limit if limit is not None else DEFAULT_LIMIT
             
             # 하이브리드 검색 실행 (core_v2 스키마)
-            # distance_threshold를 None으로 설정하여 구조적 필터를 만족하는 모든 결과를 가져온 후 벡터 검색으로 정렬
+            # 키워드 필터링 + 벡터 정렬 결합
+            # SQL 필터가 이미 100% 정확하게 대상을 좁혔으므로, 벡터 점수로 순서(Ranking)만 정렬
+            # distance_threshold는 None(제한 없음) 또는 0.75(매우 헐겁게)로 설정
             results = self.vector_service.execute_hybrid_search_sql(
                 embedding_input=search_text,
                 filters=filters,
                 limit=effective_limit,
-                distance_threshold=None  # 구조적 필터를 만족하는 모든 결과를 가져온 후 벡터 검색으로 정렬
+                distance_threshold=self.distance_threshold,  # None 또는 0.75 - 구조적 필터 통과자는 모두 보여주고 벡터로 정렬만
+                semantic_keywords=semantic_keywords  # 키워드 필터링을 위한 키워드 리스트 전달
             )
+            
+            # total_count 추출 (메타데이터에서)
+            total_count = len(results) if results else 0
+            if results and len(results) > 0 and '_total_count' in results[0]:
+                total_count = results[0]['_total_count']
+                # 메타데이터 제거
+                for result in results:
+                    if '_total_count' in result:
+                        del result['_total_count']
             
             return {
                 "results": results or [],
                 "count": len(results) if results else 0,
+                "total_count": total_count,  # ★ TRUE Total matches in DB
                 "strategy": "hybrid",
                 "filters_applied": filters or {},
                 "keywords_used": semantic_keywords,

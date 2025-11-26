@@ -7,6 +7,7 @@ import Settings from "../pages/settings/page";
 import TargetGroups from "../pages/target-groups/page";
 import DataSource from "../pages/data-source/page";
 import ExportHistory from "../pages/export-history/page";
+import SemanticSearch from "../pages/semantic-search/page";
 
 export const routes: RouteObject[] = [
   {
@@ -36,6 +37,10 @@ export const routes: RouteObject[] = [
   {
     path: "/export-history",
     element: <ExportHistory />,
+  },
+  {
+    path: "/semantic-search",
+    element: <SemanticSearch />,
   },
   {
     path: "*",

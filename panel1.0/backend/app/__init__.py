@@ -59,6 +59,8 @@ def create_app():
     #    - /api/search: 자연어 질의 → 자동 전략 선택 → 검색 실행
     from app.routes import search as search_route
     app.register_blueprint(search_route.bp)
+    from app.routes import semantic_search_routes
+    app.register_blueprint(semantic_search_routes.bp)
     
     # 2. 패널 대시보드 및 도구 라우트 (PanelDataService 기반)
     #    - /api/panel/dashboard: 대시보드 데이터 (캐싱)

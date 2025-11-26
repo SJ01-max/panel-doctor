@@ -1,15 +1,19 @@
 """
 패널 대시보드 및 도구 라우트 (PanelDataService 기반)
 - /api/panel/dashboard: 패널 대시보드 데이터 조회 (캐싱 적용)
+- /api/panel/export: 패널 검색 결과 전체 내보내기 (CSV)
 - /api/tools/*: 개발/디버깅용 도구 엔드포인트
 - 주의: search.py와는 다른 역할 (search.py는 통합 검색용)
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from app.services.data.panel import PanelDataService
 from app.services.data.executor import execute_sql_safe
+from app.services.search.service import SearchService
 from app.config import Config
 import traceback
 import time
+import csv
+import io
 
 
 bp = Blueprint('panel_search', __name__, url_prefix='/api/panel')
@@ -20,6 +24,14 @@ _dashboard_cache = {
     'timestamp': None
 }
 CACHE_TTL = 86400  # 24시간 (1일, 초 단위)
+
+def clear_dashboard_cache():
+    """대시보드 캐시 초기화 (개발/테스트용)"""
+    global _dashboard_cache
+    _dashboard_cache = {
+        'data': None,
+        'timestamp': None
+    }
 
 
 @bp.route('/dashboard', methods=['GET'])
@@ -101,6 +113,270 @@ def get_health():
         return jsonify(health_data), 200
     except Exception as e:
         print(f"[ERROR] 데이터 품질 진단 오류: {e}")
+        print(f"[ERROR] 트레이스백: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/dashboard/clear-cache', methods=['POST'])
+def clear_dashboard_cache_endpoint():
+    """대시보드 캐시 초기화 (개발/테스트용)"""
+    try:
+        clear_dashboard_cache()
+        print("[CACHE] 대시보드 캐시 초기화 완료")
+        return jsonify({'message': '캐시가 초기화되었습니다.'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/export', methods=['GET'])
+def export_panels():
+    """
+    패널 검색 결과 전체 내보내기 (CSV)
+    
+    Query Parameters:
+        - q: 검색 쿼리 (자연어)
+        - model: LLM 모델 (선택사항)
+    
+    Returns:
+        CSV 파일 (스트리밍 응답)
+    """
+    try:
+        query = request.args.get('q', '').strip()
+        model = request.args.get('model', None)
+        
+        if not query:
+            return jsonify({
+                'error': 'query가 필요합니다.',
+                'message': '검색 쿼리를 입력해주세요.'
+            }), 400
+        
+        print(f"[INFO] 패널 내보내기 시작: query='{query}'")
+        
+        # 통합 검색 서비스 실행 (LIMIT 없이)
+        search_service = SearchService()
+        result = search_service.search(user_query=query, model=model, min_results=0)
+        
+        results = result.get('results', [])
+        total_count = result.get('total_count', len(results))
+        
+        print(f"[INFO] 내보내기 대상: {total_count}개 (반환된 결과: {len(results)}개)")
+        
+        # LIMIT 없이 전체 데이터 조회
+        # 이미 검색 결과가 있지만, 전체를 가져오기 위해 다시 검색 실행
+        # 또는 기존 결과를 사용 (LIMIT이 적용되지 않은 경우)
+        
+        # 전체 데이터를 가져오기 위해 LIMIT을 매우 크게 설정하여 재검색
+        # 또는 기존 검색 로직을 재사용하되 LIMIT 없이
+        filters = result.get('filters_applied', {})
+        semantic_keywords = result.get('keywords_used', [])
+        strategy = result.get('selected_strategy', 'filter_first')
+        
+        # 전략에 따라 전체 데이터 조회
+        if strategy == 'filter_first':
+            from app.services.search.strategy.filter_first import FilterFirstSearch
+            search_strategy = FilterFirstSearch()
+            full_result = search_strategy.search(filters=filters, limit=50000)  # 매우 큰 LIMIT
+        elif strategy == 'semantic_first':
+            from app.services.search.strategy.semantic_first import SemanticFirstSearch
+            search_strategy = SemanticFirstSearch()
+            full_result = search_strategy.search(semantic_keywords=semantic_keywords, limit=50000)
+        elif strategy == 'hybrid':
+            from app.services.search.strategy.hybrid import HybridSearch
+            search_strategy = HybridSearch()
+            full_result = search_strategy.search(filters=filters, semantic_keywords=semantic_keywords, limit=50000)
+        else:
+            full_result = {'results': results}
+        
+        export_results = full_result.get('results', results)
+        
+        print(f"[INFO] 내보내기 데이터 준비 완료: {len(export_results)}개")
+        
+        # CSV 생성 (스트리밍)
+        def generate_csv():
+            # BOM 추가 (Excel에서 한글 깨짐 방지)
+            yield '\ufeff'
+            
+            # CSV Writer 생성
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # 헤더 작성
+            if export_results and len(export_results) > 0:
+                # 첫 번째 결과에서 키 추출
+                headers = ['respondent_id', 'gender', 'age', 'region', 'birth_year']
+                # json_doc이 있으면 추가
+                if 'json_doc' in export_results[0] or 'content' in export_results[0]:
+                    headers.append('content')
+                
+                writer.writerow(headers)
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+                
+                # 데이터 행 작성
+                for row in export_results:
+                    # 나이 계산
+                    age = None
+                    if 'birth_year' in row and row['birth_year']:
+                        from datetime import datetime
+                        current_year = datetime.now().year
+                        age = current_year - row['birth_year']
+                    
+                    csv_row = [
+                        row.get('respondent_id', ''),
+                        row.get('gender', ''),
+                        age if age is not None else '',
+                        row.get('region', ''),
+                        row.get('birth_year', ''),
+                    ]
+                    
+                    # content 추가
+                    content = row.get('json_doc') or row.get('content', '')
+                    if content:
+                        # JSON 문자열을 CSV에 안전하게 포함
+                        csv_row.append(str(content).replace('\n', ' ').replace('\r', ' '))
+                    else:
+                        csv_row.append('')
+                    
+                    writer.writerow(csv_row)
+                    yield output.getvalue()
+                    output.seek(0)
+                    output.truncate(0)
+            else:
+                # 결과가 없을 때
+                writer.writerow(['respondent_id', 'gender', 'age', 'region', 'birth_year', 'content'])
+                yield output.getvalue()
+        
+        # 파일명 생성
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"panel_export_{timestamp}.csv"
+        
+        print(f"[INFO] CSV 파일 생성 완료: {filename}")
+        
+        return Response(
+            stream_with_context(generate_csv()),
+            mimetype='text/csv; charset=utf-8',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Type': 'text/csv; charset=utf-8'
+            }
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] 패널 내보내기 실패: {e}")
+        print(f"[ERROR] 상세 오류:\n{traceback.format_exc()}")
+        return jsonify({
+            'error': str(e),
+            'type': type(e).__name__
+        }), 500
+
+
+@bp.route('/detail/<respondent_id>', methods=['GET'])
+def get_panel_detail(respondent_id: str):
+    """
+    패널 상세 정보 조회 (respondent_summary_json 기반)
+    
+    Args:
+        respondent_id: 패널 ID
+    
+    Returns:
+        패널 상세 정보 (기본 정보 + 정리된 JSON 문서)
+    """
+    try:
+        # 기본 정보 조회 (core_v2.respondent)
+        basic_info = execute_sql_safe(
+            query="""
+                SELECT 
+                    respondent_id,
+                    gender,
+                    birth_year,
+                    region,
+                    district
+                FROM core_v2.respondent
+                WHERE respondent_id = %(respondent_id)s
+            """,
+            params={'respondent_id': respondent_id},
+            limit=1
+        )
+        
+        if not basic_info or len(basic_info) == 0:
+            return jsonify({'error': '패널을 찾을 수 없습니다.'}), 404
+        
+        basic = basic_info[0]
+        
+        # 나이 계산
+        from datetime import datetime
+        current_year = datetime.now().year
+        birth_year = basic.get('birth_year')
+        age = None
+        age_text = None
+        if birth_year:
+            age = current_year - birth_year
+            age_text = f"만 {age}세"
+        
+        # 정리된 JSON 문서 조회 (여러 가능한 테이블/컬럼명 시도)
+        json_content = None
+        import json as json_module
+        
+        # 가능한 테이블/컬럼 조합 시도
+        possible_queries = [
+            # 1. respondent_summary_json.summary_json
+            ("core_v2.respondent_summary_json", "summary_json"),
+            # 2. respondent_summary_json.json_doc
+            ("core_v2.respondent_summary_json", "json_doc"),
+            # 3. respondent_summary.summary_json
+            ("core_v2.respondent_summary", "summary_json"),
+            # 4. fallback: respondent_json.json_doc
+            ("core_v2.respondent_json", "json_doc"),
+        ]
+        
+        for table_name, column_name in possible_queries:
+            try:
+                result = execute_sql_safe(
+                    query=f"""
+                        SELECT 
+                            respondent_id,
+                            {column_name}
+                        FROM {table_name}
+                        WHERE respondent_id = %(respondent_id)s
+                    """,
+                    params={'respondent_id': respondent_id},
+                    limit=1
+                )
+                
+                if result and len(result) > 0:
+                    json_content = result[0].get(column_name)
+                    if json_content:
+                        # JSON 문자열인 경우 파싱 시도
+                        if isinstance(json_content, str):
+                            try:
+                                json_content = json_module.loads(json_content)
+                            except Exception as parse_err:
+                                print(f"[WARN] {table_name}.{column_name} 파싱 실패: {parse_err}")
+                                # 파싱 실패해도 문자열 그대로 사용
+                        print(f"[INFO] {table_name}.{column_name}에서 데이터 조회 성공")
+                        break  # 성공하면 루프 종료
+            except Exception as e:
+                print(f"[DEBUG] {table_name}.{column_name} 조회 실패 (무시): {e}")
+                continue  # 다음 조합 시도
+        
+        result = {
+            'respondent_id': basic.get('respondent_id'),
+            'gender': basic.get('gender', '-'),
+            'birth_year': birth_year,
+            'age': age,
+            'age_text': age_text,
+            'region': basic.get('region', '-'),
+            'district': basic.get('district', '-'),
+            'json_doc': json_content,
+            'last_response_date': None  # TODO: 실제 응답일 정보가 있으면 추가
+        }
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        print(f"[ERROR] 패널 상세 정보 조회 오류: {e}")
         print(f"[ERROR] 트레이스백: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 

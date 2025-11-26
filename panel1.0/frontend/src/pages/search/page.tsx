@@ -231,7 +231,10 @@ export default function SearchPage() {
                   id: panel.id,
                   gender: panel.gender,
                   age: panel.age,
-                  region: panel.region
+                  region: panel.region,
+                  matchScore: panel.matchScore,
+                  content: panel.content,
+                  semanticKeywords: panel.semanticKeywords
                 });
               }}
             />
@@ -258,6 +261,7 @@ export default function SearchPage() {
       <PanelDetailSlideOver
         panelId={selectedPanel}
         panelData={selectedPanelData}
+        query={query}
         onClose={() => {
           setSelectedPanel(null);
           setSelectedPanelData(null);

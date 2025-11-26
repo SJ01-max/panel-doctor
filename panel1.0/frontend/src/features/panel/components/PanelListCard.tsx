@@ -8,18 +8,24 @@ export interface PanelItem {
   birthYear?: string;
   lastResponseDate?: string;
   matchScore?: number; // 적합도 점수 (0-100)
+  content?: string; // 패널의 json_doc 내용 (매칭 이유 표시용)
+  semanticKeywords?: string[]; // 검색에 사용된 키워드
 }
 
 interface PanelListCardProps {
   panels: PanelItem[];
   onPanelClick: (panel: PanelItem) => void;
   maxItems?: number;
+  showMatchScore?: boolean; // Match Score Bar 표시 여부
+  strategy?: 'filter_first' | 'semantic_first' | 'hybrid'; // 전략 타입
 }
 
 export const PanelListCard: React.FC<PanelListCardProps> = ({
   panels,
   onPanelClick,
-  maxItems = 4
+  maxItems = 4,
+  showMatchScore = false,
+  strategy
 }) => {
   const [showAll, setShowAll] = React.useState(false);
   const [visibleCount, setVisibleCount] = React.useState(maxItems);
@@ -113,44 +119,63 @@ export const PanelListCard: React.FC<PanelListCardProps> = ({
         ref={scrollContainerRef}
         className="flex flex-col gap-2 text-xs md:text-sm max-h-[600px] overflow-y-auto"
       >
-        {displayPanels.map((panel, i) => (
-          <div
-            key={i}
-            onClick={() => onPanelClick(panel)}
-            className="flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2 hover:bg-[#f9f9ff] cursor-pointer transition"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-[#f2f3ff] flex items-center justify-center text-[13px]">
-                👤
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[11px] text-gray-500">
-                  패널 ID
-                </span>
-                <span className="text-xs font-medium text-gray-800">
-                  {panel.id}
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-gray-500">
-                  {panel.gender || '-'} · {panel.age || '-'} · {panel.region || '-'}
-                </span>
-                {panel.matchScore !== undefined && (
-                  <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                    {Math.round(panel.matchScore)}% 일치
+        {displayPanels.map((panel, i) => {
+          const matchScore = panel.matchScore ?? 100;
+          const scoreColor = matchScore >= 90 ? 'from-green-500 to-emerald-500' :
+                            matchScore >= 80 ? 'from-blue-500 to-indigo-500' :
+                            matchScore >= 70 ? 'from-violet-500 to-purple-500' :
+                            'from-gray-400 to-gray-500';
+          
+          return (
+            <div
+              key={i}
+              onClick={() => onPanelClick(panel)}
+              className="flex flex-col rounded-xl border border-gray-100 px-3 py-3 hover:bg-[#f9f9ff] cursor-pointer transition-all hover:shadow-sm"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-[#f2f3ff] flex items-center justify-center text-[13px]">
+                    👤
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-gray-500">
+                      패널 ID
+                    </span>
+                    <span className="text-xs font-medium text-gray-800">
+                      {panel.id}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="text-[11px] text-gray-500">
+                    {panel.gender || '-'} · {panel.age || '-'} · {panel.region || '-'}
                   </span>
-                )}
+                  {panel.lastResponseDate && (
+                    <span className="text-[10px] text-gray-400">
+                      최근 응답: {panel.lastResponseDate}
+                    </span>
+                  )}
+                </div>
               </div>
-              {panel.lastResponseDate && (
-                <span className="text-[10px] text-gray-400">
-                  최근 응답: {panel.lastResponseDate}
-                </span>
+              
+              {/* Match Score Bar (hybrid/semantic_first일 때만 표시) */}
+              {showMatchScore && panel.matchScore !== undefined && strategy !== 'filter_first' && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] text-gray-500">
+                    <span>적합도</span>
+                    <span className="font-semibold text-gray-700">{Math.round(matchScore)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full bg-gradient-to-r ${scoreColor} transition-all duration-500 ease-out`}
+                      style={{ width: `${matchScore}%` }}
+                    />
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {showAll && visibleCount < panels.length && (
           <div className="text-center py-2 text-xs text-gray-400">
             로딩 중... ({visibleCount} / {panels.length})

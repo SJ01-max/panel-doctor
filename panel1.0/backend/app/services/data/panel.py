@@ -240,7 +240,7 @@ class PanelDataService:
                     print(f"[ERROR] 트레이스백: {traceback.format_exc()}")
                     panel_summary['ageDistribution'] = []
                 
-                # 지역 분포
+                # 지역 분포 (상위 10개까지 조회하여 프론트엔드에서 상위 6개 + 기타로 처리)
                 try:
                     region_stats = execute_sql_safe(
                         query=(
@@ -249,9 +249,9 @@ class PanelDataService:
                             'WHERE region IS NOT NULL AND region != \'\' '
                             'GROUP BY region '
                             'ORDER BY cnt DESC '
-                            'LIMIT 4'
+                            'LIMIT 10'
                         ),
-                        limit=4,
+                        limit=10,
                     )
                     
                     colors = ['#2F6BFF', '#5B8DEF', '#8B5CF6', '#A8A8A8']

@@ -56,9 +56,20 @@ export const KPIStatCard: React.FC<KPIStatCardProps> = ({
         )}
       </div>
       <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-2xl font-semibold text-gray-900">
-          {value}
-        </span>
+        {value.includes('명') ? (
+          <>
+            <span className="text-2xl font-semibold text-gray-900">
+              {value.replace('명', '')}
+            </span>
+            <span className="text-xl font-bold text-violet-600 ml-1">
+              명
+            </span>
+          </>
+        ) : (
+          <span className="text-2xl font-semibold text-gray-900">
+            {value}
+          </span>
+        )}
       </div>
     </div>
   );

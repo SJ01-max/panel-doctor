@@ -14,7 +14,8 @@ export interface UnifiedSearchResponse {
     distance?: number;
     [key: string]: unknown;
   }>;
-  count: number;
+  count: number;  // 반환된 결과 개수
+  total_count?: number;  // ★ TRUE Total matches in DB
   strategy: 'filter_first' | 'semantic_first' | 'hybrid';
   parsed_query: {
     filters: {

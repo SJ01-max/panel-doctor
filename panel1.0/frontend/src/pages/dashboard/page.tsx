@@ -88,10 +88,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 // 유리 질감의 카드 컴포넌트
 const BentoCard = ({ children, className, delay = 0, title, icon: Icon }: any) => {
   const delayClass = delay > 0 ? `animate-card-enter-delay-${Math.round(delay * 10)}` : 'animate-card-enter';
+  const hasOverflowVisible = className?.includes('overflow-visible');
+  const overflowClass = hasOverflowVisible ? 'overflow-visible' : 'overflow-hidden';
   
   return (
     <div
-      className={`bg-white rounded-3xl border border-slate-200/60 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col ${delayClass} ${className}`}
+      className={`bg-white rounded-3xl border border-slate-200/60 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ${overflowClass} flex flex-col ${delayClass} ${className}`}
     >
       {title && (
         <div className="px-6 pt-6 pb-2 flex items-center gap-2 mb-2">
@@ -326,8 +328,13 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2 text-indigo-200 font-medium mb-1">
                   <Users size={20} /> TOTAL PANELS
                 </div>
-                <div className="text-7xl font-bold tracking-tight relative">
-                  <Counter value={totalPanels} />
+                <div className="relative">
+                  <div className="flex items-baseline gap-2">
+                    <div className="text-5xl font-bold tracking-tight leading-none">
+                      <Counter value={totalPanels} />
+                    </div>
+                    <span className="text-4xl font-bold text-indigo-200 leading-none">명</span>
+                  </div>
                   {/* Mini Sparkline */}
                   <svg 
                     className="absolute bottom-[-8px] left-0 w-32 h-8 opacity-30"
@@ -473,12 +480,32 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart 
                   layout="vertical" 
-                  data={regionData} 
+                  data={(() => {
+                    // 지역 데이터를 값 기준으로 내림차순 정렬
+                    const sortedRegions = [...regionData].sort((a, b) => b.value - a.value);
+                    
+                    // 상위 6개 추출
+                    const top6 = sortedRegions.slice(0, 6);
+                    
+                    // 나머지 합산하여 "기타" 항목 생성
+                    const others = sortedRegions.slice(6);
+                    const othersTotal = others.reduce((sum, item) => sum + item.value, 0);
+                    
+                    // 상위 6개 + 기타 (총 7개)
+                    const displayData = [...top6];
+                    if (othersTotal > 0) {
+                      displayData.push({ name: '기타', value: othersTotal });
+                    }
+                    
+                    return displayData;
+                  })()}
                   margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
                   onClick={(data: any) => {
                     if (data && data.activePayload && data.activePayload[0]) {
                       const regionName = data.activePayload[0].payload.name;
-                      navigate(`/search?q=${encodeURIComponent(regionName + ' 거주 패널')}`);
+                      if (regionName !== '기타') {
+                        navigate(`/search?q=${encodeURIComponent(regionName + ' 거주 패널')}`);
+                      }
                     }
                   }}
                   style={{ cursor: 'pointer' }}
@@ -487,20 +514,31 @@ export default function Dashboard() {
                   <YAxis dataKey="name" type="category" width={40} axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b', fontWeight: 600}} />
                   <Tooltip content={<CustomTooltip />} cursor={{fill: '#f8fafc'}} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
-                    {regionData.map((entry, index) => {
-                      // Gradient color based on rank (darker for higher values)
-                      const sortedData = [...regionData].sort((a, b) => b.value - a.value);
-                      const rank = sortedData.findIndex(item => item.name === entry.name);
-                      const colors = ['#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
-                      const colorIndex = Math.min(rank, colors.length - 1);
-                      return (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={colors[colorIndex]}
-                          className="hover:opacity-80 transition-opacity"
-                        />
-                      );
-                    })}
+                    {(() => {
+                      const sortedRegions = [...regionData].sort((a, b) => b.value - a.value);
+                      const top6 = sortedRegions.slice(0, 6);
+                      const others = sortedRegions.slice(6);
+                      const othersTotal = others.reduce((sum, item) => sum + item.value, 0);
+                      const displayData = [...top6];
+                      if (othersTotal > 0) {
+                        displayData.push({ name: '기타', value: othersTotal });
+                      }
+                      
+                      return displayData.map((entry, index) => {
+                        // Gradient color based on rank (darker for higher values)
+                        const colors = ['#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#e9d5ff', '#f3e8ff'];
+                        const colorIndex = Math.min(index, colors.length - 1);
+                        // 기타는 회색으로 표시
+                        const fillColor = entry.name === '기타' ? '#94a3b8' : colors[colorIndex];
+                        return (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={fillColor}
+                            className="hover:opacity-80 transition-opacity"
+                          />
+                        );
+                      });
+                    })()}
                     <LabelList dataKey="value" position="right" style={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} />
                   </Bar>
                 </BarChart>
