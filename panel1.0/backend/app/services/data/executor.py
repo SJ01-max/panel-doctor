@@ -71,6 +71,14 @@ def execute_sql_safe(
     #로그용 쿼리
     sql_snippet = query.strip().replace("\n", " ")[:120]
 
+    print(
+        "[PERF] execute_sql_safe "
+        f"elapsed={elapsed:.3f}s, "
+        f"rows={len(rows)}, "
+        f"limit={limit}, timeout_ms={statement_timeout_ms}, "
+        f"sql='{sql_snippet}'"
+    )
+
     result = [dict(zip(columns, row)) for row in rows]
     return result
 
