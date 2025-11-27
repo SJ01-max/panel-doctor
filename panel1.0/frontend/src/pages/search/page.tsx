@@ -37,10 +37,10 @@ const FilterChip = ({
 };
 
 const QUICK_SUGGESTIONS = [
-  { icon: '📍', label: '서울/경기', query: '서울 경기 거주 패널' },
-  { icon: '💼', label: '3040 직장인', query: '30대 40대 직장인' },
-  { icon: '💪', label: '헬스/운동', query: '운동 헬스장 이용 패널' },
-  { icon: '📱', label: '얼리어답터', query: '최신 스마트폰 사용 패널' },
+  { icon: '😰', label: '스트레스를 받는 사람들', query: '스트레스를 받는 사람들' },
+  { icon: '📱', label: '아이폰 쓰는 사람', query: '아이폰 쓰는 사람' },
+  { icon: '🚗', label: '제네시스 타는 사람', query: '제네시스 타는 사람' },
+  { icon: '👤', label: '서울 거주 30대 남성', query: '서울 거주 30대 남성' },
 ];
 
 // Dashboard Skeleton 컴포넌트 (로딩 중 레이아웃 유지)
@@ -142,21 +142,43 @@ export default function SearchPage() {
 
         {/* Quick Suggestion Chips - 검색 전일 때만 표시 */}
         {!hasSearched && !isSearching && (
-          <div className="mt-6 flex flex-wrap gap-3 justify-center animate-fade-in">
-            {QUICK_SUGGESTIONS.map((suggestion, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setQuery(suggestion.query);
-                  handleSearch(suggestion.query);
-                }}
-                className="group flex items-center gap-2 px-4 py-2.5 bg-white/60 backdrop-blur-md border border-slate-200/50 rounded-full text-sm font-medium text-slate-700 hover:bg-white/80 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-lg transition-all duration-200 shadow-sm"
-                style={{ animationDelay: `${idx * 100}ms` }}
-              >
-                <span className="text-lg">{suggestion.icon}</span>
-                <span>{suggestion.label}</span>
-              </button>
-            ))}
+          <div className="mt-6 flex flex-col items-center gap-3 animate-fade-in">
+            {/* 상단 3개: 가로 정렬 */}
+            <div className="flex flex-wrap gap-3 justify-center">
+              {QUICK_SUGGESTIONS.slice(0, 3).map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setQuery(suggestion.query);
+                    handleSearch(suggestion.query);
+                  }}
+                  className="group flex items-center gap-2 px-5 py-3 bg-white/80 backdrop-blur-md border border-slate-200/60 rounded-full text-sm font-medium text-slate-700 hover:bg-white hover:border-violet-300 hover:text-violet-600 hover:shadow-lg transition-all duration-200 shadow-md hover:scale-105"
+                  style={{ animationDelay: `${idx * 100}ms` }}
+                >
+                  <span className="text-xl">{suggestion.icon}</span>
+                  <span>{suggestion.label}</span>
+                </button>
+              ))}
+            </div>
+            {/* 하단 1개: 중앙 정렬 */}
+            {QUICK_SUGGESTIONS.length > 3 && (
+              <div className="flex justify-center">
+                {QUICK_SUGGESTIONS.slice(3).map((suggestion, idx) => (
+                  <button
+                    key={idx + 3}
+                    onClick={() => {
+                      setQuery(suggestion.query);
+                      handleSearch(suggestion.query);
+                    }}
+                    className="group flex items-center gap-2 px-5 py-3 bg-white/80 backdrop-blur-md border border-slate-200/60 rounded-full text-sm font-medium text-slate-700 hover:bg-white hover:border-violet-300 hover:text-violet-600 hover:shadow-lg transition-all duration-200 shadow-md hover:scale-105"
+                    style={{ animationDelay: `${(idx + 3) * 100}ms` }}
+                  >
+                    <span className="text-xl">{suggestion.icon}</span>
+                    <span>{suggestion.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
