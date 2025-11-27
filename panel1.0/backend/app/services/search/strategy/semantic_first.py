@@ -61,9 +61,9 @@ class SemanticFirstSearch(SearchStrategy):
         
         try:
             # 벡터 검색 실행 (core_v2 스키마)
-            # 통계 정확도를 위해 DEFAULT_LIMIT = 500 설정
-            # Vector search는 HNSW 인덱스로 빠르므로 500개도 성능에 큰 영향 없음
-            DEFAULT_LIMIT = 500
+            # 통계 정확도를 위해 DEFAULT_LIMIT = 5000 설정
+            # Vector search는 HNSW 인덱스로 빠르므로 5000개도 성능에 큰 영향 없음
+            DEFAULT_LIMIT = 5000
             effective_limit = limit if limit is not None else DEFAULT_LIMIT
             # semantic_first는 의미 기반 검색이므로 키워드 필터링 없이 벡터 검색만 사용
             # 키워드 필터링은 정확한 텍스트 매칭을 요구하므로 의미 기반 검색의 목적과 맞지 않음

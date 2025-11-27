@@ -155,15 +155,12 @@ export const usePanelSearch = () => {
 
   const handleSearch = async (searchQuery?: string) => {
     const queryToUse = searchQuery || query;
-    console.log('[🔍 SEARCH] handleSearch 시작:', { queryToUse, isSearching });
     
     if (!queryToUse.trim() || isSearching) {
-      console.log('[🔍 SEARCH] 검색 중단:', { queryEmpty: !queryToUse.trim(), isSearching });
       return;
     }
 
     // 1차 DB 검색 시작
-    console.log('[🔍 SEARCH] 1차 DB 검색 시작 - isSearching = true');
     setIsSearching(true);
     setError(null);
     setQuery(queryToUse);
@@ -176,14 +173,7 @@ export const usePanelSearch = () => {
 
     try {
       // 1. 먼저 DB 검색 결과 가져오기 (빠름)
-      console.log('[🔍 SEARCH] unifiedSearch API 호출 시작...');
       const unifiedResult = await unifiedSearch(queryToUse.trim());
-      console.log('[🔍 SEARCH] unifiedSearch 응답 받음:', {
-        has_results: unifiedResult?.has_results,
-        count: unifiedResult?.count,
-        resultsLength: unifiedResult?.results?.length,
-        strategy: unifiedResult?.strategy
-      });
       
       // has_results가 True이고 count > 0이면 결과가 있다고 판단
       // results 배열이 비어있어도 count가 있으면 결과가 있는 것으로 처리
@@ -206,13 +196,6 @@ export const usePanelSearch = () => {
 
         // 즉시 검색 결과 렌더링 준비 (먼저 통합 검색 결과만 사용)
         const results = unifiedResult.results || [];
-        console.log('[🔍 SEARCH] 결과 설정:', {
-          resultsLength: results.length,
-          count: unifiedResult.count,
-          has_results: unifiedResult.has_results,
-          strategy: unifiedResult.strategy
-        });
-        
         currentUnifiedResultRef.current = unifiedResult;
         
         // startTransition 제거 - 즉시 렌더링
@@ -266,12 +249,10 @@ export const usePanelSearch = () => {
 
   // AI Insight를 별도로 비동기 로드하는 함수
   const loadInsightAsync = async (query: string, unifiedResult: UnifiedSearchResponse) => {
-    console.log('[🤖 AI] loadInsightAsync 시작');
     try {
       // 통계 정보 미리 계산
       const allResults = unifiedResult.results || [];
       const { ageData, regionData } = extractChartData(allResults);
-      console.log('[🤖 AI] 통계 계산 완료:', { ageDataLength: ageData.length, regionDataLength: regionData.length });
       
       // 성별 분포 계산
       const genderCounts: Record<string, number> = {};
@@ -314,24 +295,11 @@ export const usePanelSearch = () => {
         extractedChips: extractedChips
       };
       
-      console.log('[🤖 AI] panelSearchResult 구성 완료:', {
-        estimatedCount: panelSearchResult.estimatedCount,
-        extractedChipsCount: panelSearchResult.extractedChips.length,
-        hasDistributionStats: !!panelSearchResult.distributionStats
-      });
-
-      console.log('[🤖 AI] sqlSearch API 호출 시작...');
       const llmResponse = await sqlSearch(query, undefined, undefined, panelSearchResult);
-      console.log('[🤖 AI] sqlSearch 응답 받음:', {
-        hasWidgets: !!llmResponse?.widgets,
-        widgetsCount: llmResponse?.widgets?.length || 0
-      });
-      
       const llmWidgets = (llmResponse?.widgets || []) as any[];
 
       // LLM 결과 업데이트 (widgets 포함)
       // ★ 중요: 기존 unifiedResult를 절대 잃어버리지 않도록 강제 보존
-      console.log('[🤖 AI] searchResult 상태 업데이트 시작');
       
       // LLM 위젯은 기존 keyword 위젯은 유지하고, 나머지 타입만 덮어쓴다
       setWidgets(prev => {
@@ -343,13 +311,6 @@ export const usePanelSearch = () => {
         ];
       });
       setSearchResult(prev => {
-        // 디버깅: 현재 상태 체크
-        console.log('[🤖 AI] 상태 업데이트 전 체크:', {
-          hasPrev: !!prev,
-          hasPrevUnified: !!prev?.unified,
-          hasRefUnified: !!currentUnifiedResultRef.current,
-          hasParamUnified: !!unifiedResult
-        });
         // 안전장치 1: ref에서 최신 unifiedResult 가져오기
         const refUnified = currentUnifiedResultRef.current;
         // 안전장치 2: 함수 인자로 받은 unifiedResult
@@ -367,44 +328,89 @@ export const usePanelSearch = () => {
           return prev || { unified: undefined, llm: llmResponse || undefined };
         }
         
-        console.log('[🤖 AI] ✅ unifiedResult 보존 확인:', {
-          hasCurrentUnified: !!currentUnified,
-          unifiedCount: currentUnified?.count,
-          unifiedResultsLength: currentUnified?.results?.length
-        });
-        
         // 기존 unifiedResult를 절대 잃어버리지 않고, llm만 추가/업데이트
         return {
           unified: currentUnified, // ★ 절대 사수!
           llm: llmResponse || undefined
         };
       });
-      
-      console.log('[🤖 AI] ✅ loadInsightAsync 완료');
     } catch (err) {
       console.error('[🤖 AI] ❌ LLM 요약 가져오기 실패:', err);
     } finally {
-      console.log('[🤖 AI] setIsAnalyzing(false) - AI 분석 로딩 완료');
       setIsAnalyzing(false); // AI 분석 로딩 완료
     }
   };
 
 
-  const handleDownloadExcel = async () => {
-    if (!query || query.trim() === '') {
-      alert('검색 쿼리가 없습니다. 검색 후 다운로드해주세요.');
+  const handleDownloadExcel = () => {
+    // 이미 검색된 결과가 없으면 다운로드 불가
+    if (!allResults || allResults.length === 0) {
+      alert('다운로드할 검색 결과가 없습니다. 검색 후 다운로드해주세요.');
       return;
     }
 
     try {
-      // ★ Export API 사용: /api/panel/export 엔드포인트로 전체 데이터 다운로드
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-      const exportUrl = `${apiBaseUrl}/api/panel/export?q=${encodeURIComponent(query)}`;
+      // 프론트엔드에서 직접 CSV 생성 (재검색 없이)
+      const headers = ['respondent_id', 'gender', 'age', 'region', 'birth_year', 'content'];
       
-      // 새 창에서 다운로드 시작
-      window.location.href = exportUrl;
+      // CSV 헤더 생성
+      let csvContent = '\ufeff'; // BOM 추가 (Excel에서 한글 깨짐 방지)
+      csvContent += headers.join(',') + '\n';
       
-      console.log('[INFO] 패널 내보내기 시작:', exportUrl);
+      // 데이터 행 생성
+      allResults.forEach((row: any) => {
+        // 나이 계산
+        let age = '';
+        if (row.birth_year) {
+          const currentYear = new Date().getFullYear();
+          age = (currentYear - row.birth_year).toString();
+        } else if (row.age) {
+          age = row.age.toString();
+        }
+        
+        // CSV 값 이스케이프 (쉼표, 줄바꿈, 따옴표 처리)
+        const escapeCsvValue = (value: any): string => {
+          if (value === null || value === undefined) return '';
+          const str = String(value);
+          // 쉼표, 줄바꿈, 따옴표가 있으면 따옴표로 감싸고 내부 따옴표는 두 개로
+          if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+        
+        const content = row.json_doc || row.content || '';
+        const contentCleaned = content.replace(/\n/g, ' ').replace(/\r/g, ' ');
+        
+        const csvRow = [
+          escapeCsvValue(row.respondent_id || row.id || ''),
+          escapeCsvValue(row.gender || ''),
+          escapeCsvValue(age),
+          escapeCsvValue(row.region || ''),
+          escapeCsvValue(row.birth_year || ''),
+          escapeCsvValue(contentCleaned),
+        ];
+        
+        csvContent += csvRow.join(',') + '\n';
+      });
+      
+      // Blob 생성 및 다운로드
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      // 파일명 생성
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `panel_export_${timestamp}.csv`;
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log(`[INFO] 패널 내보내기 완료: ${allResults.length}개`);
     } catch (error: any) {
       console.error('내보내기 실패:', error);
       alert('내보내기 중 오류가 발생했습니다. 다시 시도해주세요.');

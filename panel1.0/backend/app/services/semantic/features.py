@@ -336,7 +336,7 @@ def extract_panel_features(
       response = llm_service.client.messages.create(
         model=llm_service.get_default_model(),
         max_tokens=256,
-        temperature=0.3,
+        temperature=0,  # 일관된 특징 추출을 위해 0으로 변경
         system="당신은 패널 데이터 분석 전문가입니다. JSON 배열만 출력하세요.",
         messages=[{"role": "user", "content": latent_prompt}]
       )

@@ -10,6 +10,7 @@ interface ComparisonDonutChartProps {
   referenceCount: number;
   referencePercentage: number;
   detailLabel?: string;
+  referenceDescription?: string; // 전체 데이터 설명 (예: "서울 사는 사람들 전체")
 }
 
 export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
@@ -20,7 +21,8 @@ export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
   referenceLabel,
   referenceCount,
   referencePercentage,
-  detailLabel
+  detailLabel,
+  referenceDescription
 }) => {
   const data = [
     { name: targetLabel, value: targetCount },
@@ -31,7 +33,12 @@ export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
   
   return (
     <div className="rounded-2xl bg-white border border-gray-100 p-6 shadow-sm">
-      <h4 className="text-sm font-semibold text-gray-800 mb-5 text-center">{title}</h4>
+      <h4 className="text-sm font-semibold text-gray-800 mb-1 text-center">{title}</h4>
+      {detailLabel && (
+        <p className="text-xs text-gray-500 text-center mb-4">
+          <span className="font-medium text-violet-600">{detailLabel}</span> 기준 비교
+        </p>
+      )}
       
       <div className="flex flex-col items-center gap-5">
         {/* 도넛 차트 */}
@@ -60,7 +67,10 @@ export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
                 {targetLabel}
               </div>
               <div className="text-xl font-bold text-violet-600">
-                {targetPercentage}%
+                {referenceCount > 0 ? Math.round((targetCount / referenceCount) * 100) : 0}%
+              </div>
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                전체 대비
               </div>
             </div>
           </div>
@@ -80,9 +90,14 @@ export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
           </div>
           
           <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3.5 h-3.5 rounded-full bg-violet-200 flex-shrink-0"></span>
-              <span className="text-sm font-medium text-gray-700">{referenceLabel}</span>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-violet-200 flex-shrink-0"></span>
+                <span className="text-sm font-medium text-gray-700">{referenceLabel}</span>
+              </div>
+              {referenceDescription && (
+                <span className="text-[10px] text-gray-400 ml-6">{referenceDescription}</span>
+              )}
             </div>
             <div className="text-right">
               <div className="text-sm font-bold text-gray-900">{referenceCount.toLocaleString()}명</div>
@@ -92,8 +107,8 @@ export const ComparisonDonutChart: React.FC<ComparisonDonutChartProps> = ({
           
           {detailLabel && (
             <div className="mt-3 pt-3 border-t border-gray-100">
-              <div className="text-xs font-medium text-gray-600 text-center">
-                <span className="text-violet-600 font-semibold">{detailLabel}</span> 기준
+              <div className="text-xs text-gray-500 text-center">
+                <span className="font-semibold text-gray-700">{detailLabel}</span> 기준으로 비교
               </div>
             </div>
           )}

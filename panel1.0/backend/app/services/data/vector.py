@@ -229,45 +229,92 @@ class VectorSearchService(Singleton):
                     where_conditions.append("r_info.gender = %(gender)s")
                     params["gender"] = "여"
             
-            # 연령대 필터 (birth_year 사용)
+            # 연령대 필터 (birth_year 사용) - 여러 연령대 지원 (예: "30s,40s")
             # age 또는 age_range 모두 지원
             age_range = filters.get("age_range") or filters.get("age")
             if age_range:
-                if age_range == "10s":
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                    )
-                    params["age_min"] = 10
-                    params["age_max"] = 19
-                elif age_range == "20s":
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                    )
-                    params["age_min"] = 20
-                    params["age_max"] = 29
-                elif age_range == "30s":
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                    )
-                    params["age_min"] = 30
-                    params["age_max"] = 39
-                elif age_range == "40s":
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                    )
-                    params["age_min"] = 40
-                    params["age_max"] = 49
-                elif age_range == "50s":
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                    )
-                    params["age_min"] = 50
-                    params["age_max"] = 59
-                elif age_range in ["60s", "60s+"]:
-                    where_conditions.append(
-                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) >= %(age_min)s"
-                    )
-                    params["age_min"] = 60
+                # 여러 연령대가 쉼표로 구분된 경우 처리
+                if isinstance(age_range, str) and "," in age_range:
+                    age_ranges = [a.strip() for a in age_range.split(",")]
+                    age_conditions = []
+                    
+                    for idx, age_r in enumerate(age_ranges):
+                        param_suffix = f"_{idx}"
+                        if age_r == "10s":
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 10
+                            params[f"age_max{param_suffix}"] = 19
+                        elif age_r == "20s":
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 20
+                            params[f"age_max{param_suffix}"] = 29
+                        elif age_r == "30s":
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 30
+                            params[f"age_max{param_suffix}"] = 39
+                        elif age_r == "40s":
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 40
+                            params[f"age_max{param_suffix}"] = 49
+                        elif age_r == "50s":
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 50
+                            params[f"age_max{param_suffix}"] = 59
+                        elif age_r in ["60s", "60s+"]:
+                            age_conditions.append(
+                                "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) >= %(age_min" + param_suffix + ")s"
+                            )
+                            params[f"age_min{param_suffix}"] = 60
+                    
+                    if age_conditions:
+                        where_conditions.append(f"({' OR '.join(age_conditions)})")
+                else:
+                    # 단일 연령대 처리 (기존 로직)
+                    if age_range == "10s":
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                        )
+                        params["age_min"] = 10
+                        params["age_max"] = 19
+                    elif age_range == "20s":
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                        )
+                        params["age_min"] = 20
+                        params["age_max"] = 29
+                    elif age_range == "30s":
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                        )
+                        params["age_min"] = 30
+                        params["age_max"] = 39
+                    elif age_range == "40s":
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                        )
+                        params["age_min"] = 40
+                        params["age_max"] = 49
+                    elif age_range == "50s":
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                        )
+                        params["age_min"] = 50
+                        params["age_max"] = 59
+                    elif age_range in ["60s", "60s+"]:
+                        where_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) >= %(age_min)s"
+                        )
+                        params["age_min"] = 60
             
             # 지역 필터
             if filters.get("region"):

@@ -170,6 +170,10 @@ def export_panels():
         filters = result.get('filters_applied', {})
         semantic_keywords = result.get('keywords_used', [])
         strategy = result.get('selected_strategy', 'filter_first')
+        # 의미 기반 검색의 경우 search_text를 사용해야 함
+        # parsed_query에서 search_text 추출 (LLM이 생성한 풍부한 설명 문장)
+        parsed_query = result.get('parsed_query', {})
+        search_text = parsed_query.get('search_text') or result.get('search_text_used') or result.get('search_text')
         
         # 전략에 따라 전체 데이터 조회
         if strategy == 'filter_first':
@@ -179,15 +183,29 @@ def export_panels():
         elif strategy == 'semantic_first':
             from app.services.search.strategy.semantic_first import SemanticFirstSearch
             search_strategy = SemanticFirstSearch()
-            full_result = search_strategy.search(semantic_keywords=semantic_keywords, limit=50000)
+            # ★ search_text를 사용하여 의미 기반 검색 실행
+            if search_text:
+                full_result = search_strategy.search(search_text=search_text, limit=50000)
+            else:
+                # search_text가 없으면 semantic_keywords 사용 (하위 호환성)
+                full_result = search_strategy.search(semantic_keywords=semantic_keywords, limit=50000)
         elif strategy == 'hybrid':
             from app.services.search.strategy.hybrid import HybridSearch
             search_strategy = HybridSearch()
-            full_result = search_strategy.search(filters=filters, semantic_keywords=semantic_keywords, limit=50000)
+            # ★ search_text를 사용하여 하이브리드 검색 실행
+            if search_text:
+                full_result = search_strategy.search(filters=filters, search_text=search_text, limit=50000)
+            else:
+                full_result = search_strategy.search(filters=filters, semantic_keywords=semantic_keywords, limit=50000)
         else:
             full_result = {'results': results}
         
         export_results = full_result.get('results', results)
+        
+        # 결과가 비어있으면 원래 검색 결과 사용 (fallback)
+        if not export_results or len(export_results) == 0:
+            export_results = results
+            print(f"[WARN] 재검색 결과가 비어있어 원래 검색 결과 사용: {len(results)}개")
         
         print(f"[INFO] 내보내기 데이터 준비 완료: {len(export_results)}개")
         

@@ -189,6 +189,14 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
   // 전체 결과 데이터 (통계 계산용)
   const currentAllResults = allResults.length > 0 ? allResults : (searchResult?.unified?.results || []);
   
+  // 🚀 [최적화] 통계 데이터는 'currentAllResults'가 바뀔 때만 딱 한 번 계산 (Memoization)
+  const { ageData: memoizedAgeData, regionData: memoizedRegionData } = React.useMemo(() => {
+    if (!currentAllResults || currentAllResults.length === 0) {
+      return { ageData: [], regionData: [] };
+    }
+    return extractChartData(currentAllResults);
+  }, [currentAllResults]);
+  
   // 사용자가 요청한 조건 추출 (parsed_query에서)
   const parsedQuery = searchResult?.unified?.parsed_query;
   // const requestedLimit = parsedQuery?.limit; // 현재 사용하지 않음 (totalCount 직접 사용)
@@ -583,9 +591,8 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                   });
                 }
               } else {
-                // 백엔드 통계가 없으면 프론트엔드에서 계산 (fallback)
-                const extracted = extractChartData(currentAllResults);
-                ageData = extracted.ageData;
+                // 백엔드 통계가 없으면 미리 계산된 메모이제이션된 데이터 사용 (fallback)
+                ageData = memoizedAgeData;
               }
               
               return ageData.length > 0 ? (
@@ -634,8 +641,8 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                     <DonutChartCard
                       title="지역 분포"
                       data={[{
-                        name: mainRequestedRegion,
-                        value: totalCount // 전체 검색 결과 수 사용
+                    name: mainRequestedRegion,
+                    value: totalCount // 전체 검색 결과 수 사용
                       }]}
                       subtitle="패널 기준"
                       totalCount={totalCount} // totalCount 사용 (전체 검색 결과 수)
@@ -657,18 +664,8 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                   .sort((a, b) => b.value - a.value)
                   .slice(0, 5);
               } else {
-                // 백엔드 통계가 없으면 프론트엔드에서 계산 (fallback)
-              const regionCounts: Record<string, number> = {};
-              currentAllResults.forEach(row => {
-                const region = row.region || '-';
-                const mainRegion = region.split(/\s+/)[0] || region;
-                regionCounts[mainRegion] = (regionCounts[mainRegion] || 0) + 1;
-              });
-              
-                regionData = Object.entries(regionCounts)
-                .map(([name, value]) => ({ name, value }))
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 5);
+                // 백엔드 통계가 없으면 미리 계산된 메모이제이션된 데이터 사용 (fallback)
+                regionData = memoizedRegionData;
               }
               
               return regionData.length > 0 ? (
@@ -687,16 +684,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
           {/* filter_first일 때만 전체 비율 대비 차트 표시 */}
           {isFilterFirst && (() => {
             const totalDatasetStats = searchResult.unified?.total_dataset_stats;
-            console.log('[DEBUG] filter_first 차트 렌더링 체크:', {
-              isFilterFirst,
-              hasTotalDatasetStats: !!totalDatasetStats,
-              totalDatasetStats,
-              unified: searchResult.unified,
-              unifiedKeys: searchResult.unified ? Object.keys(searchResult.unified) : []
-            });
             if (!totalDatasetStats) {
-              console.log('[DEBUG] total_dataset_stats가 없어서 차트를 표시하지 않습니다.');
-              console.log('[DEBUG] unified 객체 전체:', JSON.stringify(searchResult.unified, null, 2));
               return null;
             }
             
@@ -706,7 +694,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
             const referenceAgeStats = totalDatasetStats.age_stats || [];
             const referenceRegionStats = totalDatasetStats.region_stats || [];
             
-            // 지역 기준: 전체 데이터셋에서 해당 지역인 사람 수 vs 해당 지역이 아닌 사람 수
+            // 지역 기준: 검색된 패널들이 "해당 지역 사는 사람들" 중에서 몇 %인지
             const getRegionComparison = () => {
               if (referenceRegionStats.length === 0) return null;
               
@@ -720,34 +708,66 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                 regionName = regionValue.trim().split(/\s+/)[0];
               }
               
-              // 2. 지역 필터가 없으면 전체 데이터셋에서 가장 많은 지역을 기준으로 사용
+              // 2. 지역 필터가 없으면 검색된 패널에서 가장 많은 지역을 기준으로 사용
+              if (!regionName) {
+                // 검색된 패널에서 지역별 통계 계산
+                const searchRegionCounts: Record<string, number> = {};
+                currentAllResults.forEach(row => {
+                  const region = row.region || '';
+                  const mainRegion = region.split(/\s+/)[0] || region;
+                  if (mainRegion) {
+                    searchRegionCounts[mainRegion] = (searchRegionCounts[mainRegion] || 0) + 1;
+                  }
+                });
+                const sortedRegions = Object.entries(searchRegionCounts).sort((a, b) => b[1] - a[1]);
+                if (sortedRegions.length > 0) {
+                  regionName = sortedRegions[0][0];
+                }
+              }
+              
+              // 3. 여전히 없으면 전체 데이터셋에서 가장 많은 지역 사용
               if (!regionName && referenceRegionStats.length > 0) {
                 regionName = referenceRegionStats[0].region || '';
               }
               
               if (!regionName) return null;
               
-              // 전체 데이터셋에서 해당 지역인 사람 수 찾기
+              // 검색된 패널에서 해당 지역인 사람 수 계산
+              let targetRegionCount = 0;
+              currentAllResults.forEach(row => {
+                const region = row.region || '';
+                const mainRegion = region.split(/\s+/)[0] || region;
+                if (mainRegion === regionName) {
+                  targetRegionCount++;
+                }
+              });
+              
+              // 전체 검색 결과 수에 맞게 스케일링 (currentAllResults가 샘플인 경우)
+              if (currentAllResults.length < totalCount && currentAllResults.length > 0) {
+                const scaleFactor = totalCount / currentAllResults.length;
+                targetRegionCount = Math.round(targetRegionCount * scaleFactor);
+              }
+              
+              // 전체 데이터셋에서 해당 지역인 사람 수 찾기 (지역 필터만 적용)
               const regionInTotal = referenceRegionStats.find(r => r.region === regionName);
               const regionCountInTotal = regionInTotal?.count || 0;
               
-              // 전체 데이터셋에서 해당 지역이 아닌 사람 수
-              const nonRegionCountInTotal = referenceTotal - regionCountInTotal;
-              
               // 비율 계산
-              const regionPercentage = referenceTotal > 0 ? Math.round((regionCountInTotal / referenceTotal) * 100) : 0;
-              const nonRegionPercentage = 100 - regionPercentage;
+              const targetPercentage = totalCount > 0 ? Math.round((targetRegionCount / totalCount) * 100) : 0;
+              // 전체 데이터: 해당 지역 사는 사람들 중에서 검색된 패널이 차지하는 비율
+              const referencePercentage = regionCountInTotal > 0 ? Math.round((targetRegionCount / regionCountInTotal) * 100) : 0;
               
               return {
                 region: regionName,
-                targetCount: regionCountInTotal,
-                targetPercentage: regionPercentage,
-                referenceCount: nonRegionCountInTotal,
-                referencePercentage: nonRegionPercentage
+                targetCount: targetRegionCount,
+                targetPercentage: targetPercentage,
+                referenceCount: regionCountInTotal, // 해당 지역 사는 사람들 전체 수
+                referencePercentage: referencePercentage,
+                referenceDescription: `${regionName} 사는 사람들 전체`
               };
             };
             
-            // 성별 기준: 전체 데이터셋에서 해당 성별인 사람 수 vs 해당 성별이 아닌 사람 수
+            // 성별 기준: 검색된 패널들이 "지역 필터 적용된 상태에서 해당 성별인 사람들" 중에서 몇 %인지
             const getGenderComparison = () => {
               if (referenceGenderStats.length === 0) return null;
               
@@ -771,7 +791,31 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                 }
               }
               
-              // 2. 성별 필터가 없으면 전체 데이터셋에서 가장 많은 성별을 기준으로 사용
+              // 2. 성별 필터가 없으면 검색된 패널에서 가장 많은 성별을 기준으로 사용
+              if (!targetGenderKey) {
+                const searchGenderCounts: Record<string, number> = {};
+                currentAllResults.forEach(row => {
+                  const gender = (row.gender || '').toString();
+                  let key: string;
+                  if (['M', '남', '남성', '남자'].some(v => gender.includes(v))) key = 'M';
+                  else if (['F', '여', '여성', '여자'].some(v => gender.includes(v))) key = 'F';
+                  else key = '기타';
+                  searchGenderCounts[key] = (searchGenderCounts[key] || 0) + 1;
+                });
+                const sortedGenders = Object.entries(searchGenderCounts).sort((a, b) => b[1] - a[1]);
+                if (sortedGenders.length > 0 && sortedGenders[0][0] !== '기타') {
+                  const mainGenderKey = sortedGenders[0][0];
+                  if (mainGenderKey === 'M') {
+                    targetGenderKey = 'M';
+                    genderLabel = '남';
+                  } else if (mainGenderKey === 'F') {
+                    targetGenderKey = 'F';
+                    genderLabel = '여';
+                  }
+                }
+              }
+              
+              // 3. 여전히 없으면 전체 데이터셋에서 가장 많은 성별 사용
               if (!targetGenderKey && referenceGenderStats.length > 0) {
                 const mainGender = referenceGenderStats[0].gender || '';
                 if (mainGender === 'M' || mainGender === '남') {
@@ -788,33 +832,85 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
               
               if (!targetGenderKey || !genderLabel) return null;
               
-              // 전체 데이터셋에서 해당 성별인 사람 수 찾기
-              // gender_stats는 '남'/'여' 형식일 수 있고, 'M'/'F' 형식일 수도 있음
-              const genderInTotal = referenceGenderStats.find(g => {
-                const gKey = g.gender;
-                if (targetGenderKey === 'M') return gKey === 'M' || gKey === '남';
-                if (targetGenderKey === 'F') return gKey === 'F' || gKey === '여';
-                return gKey === targetGenderKey;
+              // 검색된 패널에서 해당 성별인 사람 수 계산
+              let targetGenderCount = 0;
+              currentAllResults.forEach(row => {
+                const gender = (row.gender || '').toString();
+                if (targetGenderKey === 'M' && ['M', '남', '남성', '남자'].some(v => gender.includes(v))) {
+                  targetGenderCount++;
+                } else if (targetGenderKey === 'F' && ['F', '여', '여성', '여자'].some(v => gender.includes(v))) {
+                  targetGenderCount++;
+                }
               });
-              const genderCountInTotal = genderInTotal?.count || 0;
               
-              // 전체 데이터셋에서 해당 성별이 아닌 사람 수
-              const nonGenderCountInTotal = referenceTotal - genderCountInTotal;
+              // 전체 검색 결과 수에 맞게 스케일링 (currentAllResults가 샘플인 경우)
+              if (currentAllResults.length < totalCount && currentAllResults.length > 0) {
+                const scaleFactor = totalCount / currentAllResults.length;
+                targetGenderCount = Math.round(targetGenderCount * scaleFactor);
+              }
+              
+              // 지역 필터가 있으면 해당 지역에서 해당 성별인 사람 수를 계산
+              // 지역 필터가 없으면 DB 전체에서 해당 성별인 사람 수 사용
+              let genderCountInTotal = 0;
+              const genderRegionFilter = activeFilters.find(f => f.label.includes('지역'));
+              
+              if (genderRegionFilter) {
+                // 지역 필터가 있는 경우: 해당 지역에서 해당 성별인 사람 수를 근사치로 계산
+                // (실제로는 백엔드에서 정확한 통계를 가져와야 하지만, 여기서는 근사치 사용)
+                const regionValue = genderRegionFilter.value.trim().split(/\s+/)[0];
+                const regionInTotal = referenceRegionStats.find(r => r.region === regionValue);
+                const regionCountInTotal = regionInTotal?.count || 0;
+                
+                // DB 전체에서 해당 성별인 사람 수
+                const genderInTotal = referenceGenderStats.find(g => {
+                  const gKey = g.gender;
+                  if (targetGenderKey === 'M') return gKey === 'M' || gKey === '남';
+                  if (targetGenderKey === 'F') return gKey === 'F' || gKey === '여';
+                  return gKey === targetGenderKey;
+                });
+                const genderCountInDB = genderInTotal?.count || 0;
+                
+                // 해당 지역에서 해당 성별인 사람 수 = (지역 비율) * (성별 비율) * 전체 인원 수
+                // 더 정확하게는: (지역 인원 수) * (해당 지역 내 성별 비율)
+                // 근사치로: (지역 인원 수) * (전체 성별 비율)
+                const genderRatioInDB = referenceTotal > 0 ? genderCountInDB / referenceTotal : 0;
+                genderCountInTotal = Math.round(regionCountInTotal * genderRatioInDB);
+              } else {
+                // 지역 필터가 없는 경우: DB 전체에서 해당 성별인 사람 수
+                const genderInTotal = referenceGenderStats.find(g => {
+                  const gKey = g.gender;
+                  if (targetGenderKey === 'M') return gKey === 'M' || gKey === '남';
+                  if (targetGenderKey === 'F') return gKey === 'F' || gKey === '여';
+                  return gKey === targetGenderKey;
+                });
+                genderCountInTotal = genderInTotal?.count || 0;
+              }
               
               // 비율 계산
-              const genderPercentage = referenceTotal > 0 ? Math.round((genderCountInTotal / referenceTotal) * 100) : 0;
-              const nonGenderPercentage = 100 - genderPercentage;
-              
-              return {
+              const targetPercentage = totalCount > 0 ? Math.round((targetGenderCount / totalCount) * 100) : 0;
+              // 전체 데이터: (지역 필터 적용된 상태에서) 해당 성별인 사람들 중에서 검색된 패널이 차지하는 비율
+              const referencePercentage = genderCountInTotal > 0 ? Math.round((targetGenderCount / genderCountInTotal) * 100) : 0;
+                  
+              // 전체 데이터 설명 생성
+              let referenceDesc = '';
+              if (genderRegionFilter) {
+                const regionValue = genderRegionFilter.value.trim().split(/\s+/)[0];
+                referenceDesc = `${regionValue} 사는 ${genderLabel}들 전체`;
+              } else {
+                referenceDesc = `${genderLabel}들 전체`;
+                  }
+                  
+                  return {
                 gender: genderLabel,
-                targetCount: genderCountInTotal,
-                targetPercentage: genderPercentage,
-                referenceCount: nonGenderCountInTotal,
-                referencePercentage: nonGenderPercentage
+                targetCount: targetGenderCount,
+                targetPercentage: targetPercentage,
+                referenceCount: genderCountInTotal, // (지역 필터 적용된 상태에서) 해당 성별인 사람들 전체 수
+                referencePercentage: referencePercentage,
+                referenceDescription: referenceDesc
               };
             };
             
-            // 연령 기준: 전체 데이터셋에서 해당 연령대인 사람 수 vs 해당 연령대가 아닌 사람 수
+            // 연령 기준: 검색된 패널들이 "지역 필터 적용된 상태에서 해당 연령대인 사람들" 중에서 몇 %인지
             const getAgeComparison = () => {
               if (referenceAgeStats.length === 0) return null;
               
@@ -839,30 +935,103 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                 }
               }
               
-              // 2. 연령 필터가 없으면 전체 데이터셋에서 가장 많은 연령대를 기준으로 사용
+              // 2. 연령 필터가 없으면 검색된 패널에서 가장 많은 연령대를 기준으로 사용
+              if (!ageGroup) {
+                const searchAgeCounts: Record<string, number> = {};
+                currentAllResults.forEach(row => {
+                  const ageText = row.age_text || row.age || '';
+                  const ageMatch = ageText.match(/만\s*(\d+)세|(\d+)세/);
+                  if (ageMatch) {
+                    const ageNum = parseInt(ageMatch[1] || ageMatch[2]);
+                    if (ageNum >= 10 && ageNum < 100) {
+                      const decade = Math.floor(ageNum / 10) * 10;
+                      const ageGroupKey = `${decade}대`;
+                      searchAgeCounts[ageGroupKey] = (searchAgeCounts[ageGroupKey] || 0) + 1;
+                    }
+                  }
+                });
+                const sortedAges = Object.entries(searchAgeCounts).sort((a, b) => b[1] - a[1]);
+                if (sortedAges.length > 0) {
+                  ageGroup = sortedAges[0][0];
+                }
+              }
+              
+              // 3. 여전히 없으면 전체 데이터셋에서 가장 많은 연령대 사용
               if (!ageGroup && referenceAgeStats.length > 0) {
                 ageGroup = referenceAgeStats[0].age_group || '';
               }
               
               if (!ageGroup) return null;
               
-              // 전체 데이터셋에서 해당 연령대인 사람 수 찾기
-              const ageInTotal = referenceAgeStats.find(a => a.age_group === ageGroup);
-              const ageCountInTotal = ageInTotal?.count || 0;
+              // 검색된 패널에서 해당 연령대인 사람 수 계산
+              let targetAgeCount = 0;
+              currentAllResults.forEach(row => {
+                const ageText = row.age_text || row.age || '';
+                const ageMatch = ageText.match(/만\s*(\d+)세|(\d+)세/);
+                if (ageMatch) {
+                  const ageNum = parseInt(ageMatch[1] || ageMatch[2]);
+                  if (ageNum >= 10 && ageNum < 100) {
+                    const decade = Math.floor(ageNum / 10) * 10;
+                    const ageGroupKey = `${decade}대`;
+                    if (ageGroupKey === ageGroup) {
+                      targetAgeCount++;
+                    }
+                  }
+                }
+              });
               
-              // 전체 데이터셋에서 해당 연령대가 아닌 사람 수
-              const nonAgeCountInTotal = referenceTotal - ageCountInTotal;
+              // 전체 검색 결과 수에 맞게 스케일링 (currentAllResults가 샘플인 경우)
+              if (currentAllResults.length < totalCount && currentAllResults.length > 0) {
+                const scaleFactor = totalCount / currentAllResults.length;
+                targetAgeCount = Math.round(targetAgeCount * scaleFactor);
+              }
+              
+              // 지역 필터가 있으면 해당 지역에서 해당 연령대인 사람 수를 계산
+              // 지역 필터가 없으면 DB 전체에서 해당 연령대인 사람 수 사용
+              let ageCountInTotal = 0;
+              const ageRegionFilter = activeFilters.find(f => f.label.includes('지역'));
+              
+              if (ageRegionFilter) {
+                // 지역 필터가 있는 경우: 해당 지역에서 해당 연령대인 사람 수를 근사치로 계산
+                const regionValue = ageRegionFilter.value.trim().split(/\s+/)[0];
+                const regionInTotal = referenceRegionStats.find(r => r.region === regionValue);
+                const regionCountInTotal = regionInTotal?.count || 0;
+                
+                // DB 전체에서 해당 연령대인 사람 수
+                const ageInTotal = referenceAgeStats.find(a => a.age_group === ageGroup);
+                const ageCountInDB = ageInTotal?.count || 0;
+                
+                // 해당 지역에서 해당 연령대인 사람 수 = (지역 비율) * (연령대 비율) * 전체 인원 수
+                // 근사치로: (지역 인원 수) * (전체 연령대 비율)
+                const ageRatioInDB = referenceTotal > 0 ? ageCountInDB / referenceTotal : 0;
+                ageCountInTotal = Math.round(regionCountInTotal * ageRatioInDB);
+              } else {
+                // 지역 필터가 없는 경우: DB 전체에서 해당 연령대인 사람 수
+                const ageInTotal = referenceAgeStats.find(a => a.age_group === ageGroup);
+                ageCountInTotal = ageInTotal?.count || 0;
+              }
               
               // 비율 계산
-              const agePercentage = referenceTotal > 0 ? Math.round((ageCountInTotal / referenceTotal) * 100) : 0;
-              const nonAgePercentage = 100 - agePercentage;
+              const targetPercentage = totalCount > 0 ? Math.round((targetAgeCount / totalCount) * 100) : 0;
+              // 전체 데이터: (지역 필터 적용된 상태에서) 해당 연령대인 사람들 중에서 검색된 패널이 차지하는 비율
+              const referencePercentage = ageCountInTotal > 0 ? Math.round((targetAgeCount / ageCountInTotal) * 100) : 0;
+                  
+              // 전체 데이터 설명 생성
+              let referenceDesc = '';
+              if (ageRegionFilter) {
+                const regionValue = ageRegionFilter.value.trim().split(/\s+/)[0];
+                referenceDesc = `${regionValue} 사는 ${ageGroup} 전체`;
+              } else {
+                referenceDesc = `${ageGroup} 전체`;
+              }
                   
                   return {
                 ageGroup: ageGroup,
-                targetCount: ageCountInTotal,
-                targetPercentage: agePercentage,
-                referenceCount: nonAgeCountInTotal,
-                referencePercentage: nonAgePercentage
+                targetCount: targetAgeCount,
+                targetPercentage: targetPercentage,
+                referenceCount: ageCountInTotal, // (지역 필터 적용된 상태에서) 해당 연령대인 사람들 전체 수
+                referencePercentage: referencePercentage,
+                referenceDescription: referenceDesc
               };
             };
             
@@ -872,7 +1041,13 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
             
             return (
               <div className="mt-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-5 text-center">전체 데이터 대비 검색 결과 비교</h3>
+                <div className="mb-5 text-center">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">전체 데이터 대비 검색 결과 비교</h3>
+                  <p className="text-xs text-gray-500 px-4">
+                    <span className="font-medium text-violet-600">검색 결과</span>: 검색된 패널 중 해당 조건을 만족하는 사람 수 · 
+                    <span className="font-medium text-gray-600"> 전체 데이터</span>: 비교 기준 집단에서 해당 조건을 만족하는 사람 수
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {/* 지역 기준 */}
                   {regionComp && (
@@ -885,6 +1060,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                       referenceCount={regionComp.referenceCount}
                       referencePercentage={regionComp.referencePercentage}
                       detailLabel={regionComp.region}
+                      referenceDescription={regionComp.referenceDescription}
                     />
                   )}
                   
@@ -899,6 +1075,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                       referenceCount={genderComp.referenceCount}
                       referencePercentage={genderComp.referencePercentage}
                       detailLabel={genderComp.gender}
+                      referenceDescription={genderComp.referenceDescription}
                     />
                   )}
                   
@@ -913,6 +1090,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                       referenceCount={ageComp.referenceCount}
                       referencePercentage={ageComp.referencePercentage}
                       detailLabel={ageComp.ageGroup}
+                      referenceDescription={ageComp.referenceDescription}
               />
             )}
           </div>

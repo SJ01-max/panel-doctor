@@ -542,6 +542,8 @@ CRITICAL RULES - READ CAREFULLY:
 
 FILTER EXTRACTION (STRUCTURED DATA ONLY - MUST GO TO filters):
 - age: "20대", "20세", "20살" → "20s", "30대", "30세" → "30s", "40대" → "40s", "50대" → "50s", "60대 이상" → "60s+"
+  * IMPORTANT: If multiple age groups are mentioned (e.g., "30대 40대", "20대와 30대"), extract as comma-separated string: "30s,40s" or "20s,30s"
+  * Examples: "30대 40대" → "30s,40s", "20대와 30대" → "20s,30s", "30대 40대 50대" → "30s,40s,50s"
 - gender: "남자", "남성", "남", "남자분" → "M", "여자", "여성", "여", "여자분" → "F"
 - region: "서울", "부산", "경기", "대구", "인천", "광주", "대전", "울산", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"
   * "서울 사는", "서울 거주", "서울에 사는" → filters.region = "서울"
@@ -560,7 +562,8 @@ SEMANTIC KEYWORDS (MEANING-BASED TAGS ONLY - NO DEMOGRAPHIC DATA):
   * "행복한" → ["행복"]
   * "외로움 느끼는" → ["외로움"]
 - ABSOLUTELY FORBIDDEN in semantic_keywords (MUST go to filters instead):
-  * Age: "20대", "30대", "20세", "30세", "20살", "30살", "20-29세", "30-39세" → MUST go to filters.age
+  * Age: "20대", "30대", "40대", "20세", "30세", "20살", "30살", "20-29세", "30-39세", "30대 40대", "20대와 30대" → MUST go to filters.age
+  * Multiple age groups: "30대 40대" → filters.age = "30s,40s", "20대 30대 40대" → filters.age = "20s,30s,40s"
   * Gender: "남자", "여자", "남성", "여성", "남", "여", "남자분", "여자분" → MUST go to filters.gender
   * Region: "서울", "부산", "경기", "대구", "인천", "광주", "대전", "울산", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주" → MUST go to filters.region
   * Count: "5명", "100명", "5개", "100개", "5건", "100건" → MUST go to limit
@@ -603,6 +606,22 @@ Query: "부산 사는 30대 여자 5명"
     "semantic_keywords": [],
     "search_text": null,
     "limit": 5
+  }
+
+Query: "30대 40대 직장인"
+→ {
+    "filters": {"age": "30s,40s", "gender": null, "region": null},
+    "semantic_keywords": ["직장인"],
+    "search_text": "회사에 다니며 정규직 또는 비정규직으로 근무하는 직장 생활을 하는 사람들",
+    "limit": null
+  }
+
+Query: "20대 30대 여자"
+→ {
+    "filters": {"age": "20s,30s", "gender": "F", "region": null},
+    "semantic_keywords": [],
+    "search_text": null,
+    "limit": null
   }
 
 Query: "서울 사는 사람들"

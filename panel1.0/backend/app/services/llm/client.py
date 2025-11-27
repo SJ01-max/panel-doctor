@@ -220,23 +220,36 @@ class LlmService(Singleton):
         messages.append({"role": "user", "content": user_prompt})
 
         if panel_search_result:
-            direct_response = self.client.messages.create(
-                model=model,
-                max_tokens=1024,
-                temperature=0,
-                system=system_hint,
-                messages=messages,
-            )
-            text = "\n".join(getattr(c, "text", "") for c in direct_response.content if getattr(c, "type", None) == "text")
-            
-            # Parse response for widgets
-            parsed_response = self._parse_storytelling_response(text)
-            
-            return {
-                "answer": parsed_response["answer"],
-                "widgets": parsed_response["widgets"],
-                "tool_called": False
-            }
+            try:
+                direct_response = self.client.messages.create(
+                    model=model,
+                    max_tokens=1024,
+                    temperature=0,
+                    system=system_hint,
+                    messages=messages,
+                )
+                text = "\n".join(getattr(c, "text", "") for c in direct_response.content if getattr(c, "type", None) == "text")
+                
+                # Parse response for widgets
+                parsed_response = self._parse_storytelling_response(text)
+                
+                return {
+                    "answer": parsed_response["answer"],
+                    "widgets": parsed_response["widgets"],
+                    "tool_called": False
+                }
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"[ERROR] LLM API 호출 실패 (panel_search_result 모드): {e}")
+                print(f"[ERROR] 상세:\n{error_trace}")
+                # 에러 발생 시 기본 응답 반환
+                return {
+                    "answer": "AI 분석을 불러오는 중 오류가 발생했습니다.",
+                    "widgets": [],
+                    "tool_called": False,
+                    "error": str(e)
+                }
 
         initial = self.client.messages.create(
             model=model,

@@ -56,7 +56,7 @@ def generate_expanded_keywords(
             response = llm_service.client.messages.create(
                 model=llm_service.get_default_model(),
                 max_tokens=1024,
-                temperature=0.3,
+                temperature=0,  # 일관된 키워드 생성을 위해 0으로 변경
                 system="당신은 의미 기반 검색 엔진의 용어 확장 전문가입니다. JSON 배열만 출력하세요.",
                 messages=[
                     {"role": "user", "content": prompt}

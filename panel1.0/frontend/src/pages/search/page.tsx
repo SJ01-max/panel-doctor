@@ -176,66 +176,37 @@ export default function SearchPage() {
       )}
 
       {/* Results Area - 조건부 렌더링 (검색창은 항상 유지) */}
-      {(() => {
-        console.log('[🎨 RENDER] 결과 영역 렌더링 조건 체크:', {
-          isSearching,
-          hasSearched,
-          allResultsLength: allResults.length,
-          hasSearchResult: !!searchResult,
-          isAnalyzing,
-          timestamp: new Date().toISOString()
-        });
-        
-        if (isSearching) {
-          console.log('[🎨 RENDER] ✅ 스켈레톤 UI 렌더링 (검색창 유지)');
-          return <DashboardSkeleton />;
-        }
-        
-        // count > 0이면 결과가 있는 것으로 판단 (results 배열이 비어있어도)
-        const hasResults = (searchResult?.unified?.count ?? 0) > 0 || allResults.length > 0;
-        if (hasSearched && hasResults && searchResult) {
-          console.log('[🎨 RENDER] ✅ 결과 대시보드 렌더링', {
-            allResultsLength: allResults.length,
-            count: searchResult?.unified?.count,
-            hasResults
-          });
-          return (
-            <ResultDashboard
-              searchResult={searchResult}
-              allResults={allResults}
-              isAnalyzing={isAnalyzing}
-              tableData={tableData}
-              tableColumns={tableColumns}
-              widgets={widgets}
-              highlightFilter={highlightFilter}
-              onDownloadExcel={handleDownloadExcel}
-              hasSearched={hasSearched}
-              query={query}
-              activeFilters={activeFilters}
-              onPanelClick={(panel: PanelItem) => {
-                setSelectedPanel(panel.id);
-                setSelectedPanelData({
-                  id: panel.id,
-                  gender: panel.gender,
-                  age: panel.age,
-                  region: panel.region,
-                  matchScore: panel.matchScore,
-                  content: panel.content,
-                  semanticKeywords: panel.semanticKeywords
-                });
-              }}
-            />
-          );
-        }
-        
-        if (hasSearched && error) {
-          console.log('[🎨 RENDER] ⚠️ 에러 상태 (결과 없음)');
-          return <div className="relative z-10 w-full max-w-6xl mt-8" />; // 빈 div로 레이아웃 유지
-        }
-        
-        console.log('[🎨 RENDER] ⏸️ 아무것도 렌더링 안 함 (초기 상태)');
-        return null;
-      })()}
+      {isSearching ? (
+        <DashboardSkeleton />
+      ) : hasSearched && ((searchResult?.unified?.count ?? 0) > 0 || allResults.length > 0) && searchResult ? (
+        <ResultDashboard
+          searchResult={searchResult}
+          allResults={allResults}
+          isAnalyzing={isAnalyzing}
+          tableData={tableData}
+          tableColumns={tableColumns}
+          widgets={widgets}
+          highlightFilter={highlightFilter}
+          onDownloadExcel={handleDownloadExcel}
+          hasSearched={hasSearched}
+          query={query}
+          activeFilters={activeFilters}
+          onPanelClick={(panel: PanelItem) => {
+            setSelectedPanel(panel.id);
+            setSelectedPanelData({
+              id: panel.id,
+              gender: panel.gender,
+              age: panel.age,
+              region: panel.region,
+              matchScore: panel.matchScore,
+              content: panel.content,
+              semanticKeywords: panel.semanticKeywords
+            });
+          }}
+        />
+      ) : hasSearched && error ? (
+        <div className="relative z-10 w-full max-w-6xl mt-8" />
+      ) : null}
 
       {/* Error Message */}
       {error && (

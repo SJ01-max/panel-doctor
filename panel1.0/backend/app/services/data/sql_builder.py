@@ -33,48 +33,100 @@ class SQLBuilder:
         where_conditions = []
         params = {}
         
-        # 연령 필터 (birth_year 사용)
+        # 연령 필터 (birth_year 사용) - 여러 연령대 지원 (예: "30s,40s")
         if filters.get("age") or filters.get("age_range"):
             age_range = filters.get("age") or filters.get("age_range")
-            if age_range == "20s":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                )
-                params["age_min"] = 20
-                params["age_max"] = 29
-            elif age_range == "30s":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                )
-                params["age_min"] = 30
-                params["age_max"] = 39
-            elif age_range == "40s":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                )
-                params["age_min"] = 40
-                params["age_max"] = 49
-            elif age_range == "50s":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                )
-                params["age_min"] = 50
-                params["age_max"] = 59
-            elif age_range == "60s" or age_range == "60s+":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
-                )
-                params["age_min"] = 60
-            elif age_range == "70s" or age_range == "70s+":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
-                )
-                params["age_min"] = 70
-            elif age_range == "80s" or age_range == "80s+":
-                where_conditions.append(
-                    "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
-                )
-                params["age_min"] = 80
+            
+            # 여러 연령대가 쉼표로 구분된 경우 처리
+            if isinstance(age_range, str) and "," in age_range:
+                age_ranges = [a.strip() for a in age_range.split(",")]
+                age_conditions = []
+                
+                for idx, age_r in enumerate(age_ranges):
+                    param_suffix = f"_{idx}"
+                    if age_r == "20s":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 20
+                        params[f"age_max{param_suffix}"] = 29
+                    elif age_r == "30s":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 30
+                        params[f"age_max{param_suffix}"] = 39
+                    elif age_r == "40s":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 40
+                        params[f"age_max{param_suffix}"] = 49
+                    elif age_r == "50s":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min" + param_suffix + ")s AND %(age_max" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 50
+                        params[f"age_max{param_suffix}"] = 59
+                    elif age_r == "60s" or age_r == "60s+":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 60
+                    elif age_r == "70s" or age_r == "70s+":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 70
+                    elif age_r == "80s" or age_r == "80s+":
+                        age_conditions.append(
+                            "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min" + param_suffix + ")s"
+                        )
+                        params[f"age_min{param_suffix}"] = 80
+                
+                if age_conditions:
+                    where_conditions.append(f"({' OR '.join(age_conditions)})")
+            else:
+                # 단일 연령대 처리 (기존 로직)
+                if age_range == "20s":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = 20
+                    params["age_max"] = 29
+                elif age_range == "30s":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = 30
+                    params["age_max"] = 39
+                elif age_range == "40s":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = 40
+                    params["age_max"] = 49
+                elif age_range == "50s":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = 50
+                    params["age_max"] = 59
+                elif age_range == "60s" or age_range == "60s+":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
+                    )
+                    params["age_min"] = 60
+                elif age_range == "70s" or age_range == "70s+":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
+                    )
+                    params["age_min"] = 70
+                elif age_range == "80s" or age_range == "80s+":
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= %(age_min)s"
+                    )
+                    params["age_min"] = 80
         
         # 성별 필터
         if filters.get("gender"):
@@ -508,6 +560,99 @@ class SQLBuilder:
             return result
         except Exception as e:
             print(f"[WARN] 전체 데이터셋 통계 계산 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "total_count": 0,
+                "gender_stats": [],
+                "age_stats": [],
+                "region_stats": []
+            }
+    
+    @staticmethod
+    def get_filtered_stats(filters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        필터를 적용한 데이터셋의 통계를 계산
+        
+        Args:
+            filters: 필터 딕셔너리 (예: {"region": "서울", "gender": "남"})
+        
+        Returns:
+            {
+                "total_count": 필터 적용 후 전체 패널 수,
+                "gender_stats": [...],
+                "age_stats": [...],
+                "region_stats": [...]
+            }
+        """
+        print(f"[DEBUG] get_filtered_stats() 호출: filters={filters}")
+        try:
+            quoted_table = '"core_v2"."respondent"'
+            
+            # WHERE 조건 생성
+            where_conditions = []
+            params = {}
+            
+            # 지역 필터
+            if filters.get("region"):
+                region = filters["region"]
+                where_conditions.append("SPLIT_PART(region, ' ', 1) = %(region)s")
+                params["region"] = region
+            
+            # 성별 필터
+            if filters.get("gender"):
+                gender = filters["gender"]
+                if gender in ["M", "남", "남성", "남자"]:
+                    params["gender"] = "남"
+                elif gender in ["F", "여", "여성", "여자"]:
+                    params["gender"] = "여"
+                else:
+                    params["gender"] = gender
+                where_conditions.append("gender = %(gender)s")
+            
+            # 연령 필터
+            if filters.get("age") or filters.get("age_group"):
+                age_range = filters.get("age") or filters.get("age_group")
+                if age_range.endswith("s"):
+                    decade = int(age_range.replace("s", ""))
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = decade
+                    params["age_max"] = decade + 9
+                elif age_range.endswith("대"):
+                    decade = int(age_range.replace("대", ""))
+                    where_conditions.append(
+                        "(EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN %(age_min)s AND %(age_max)s"
+                    )
+                    params["age_min"] = decade
+                    params["age_max"] = decade + 9
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # 전체 개수
+            total_count_query = f"""
+                SELECT COUNT(*) as total_count
+                FROM {quoted_table}
+                {where_clause}
+            """.strip()
+            
+            total_result = execute_sql_safe(query=total_count_query, params=params, limit=1)
+            total_count = total_result[0].get('total_count', 0) if total_result else 0
+            
+            result = {
+                "total_count": total_count,
+                "gender_stats": [],
+                "age_stats": [],
+                "region_stats": []
+            }
+            
+            print(f"[DEBUG] get_filtered_stats() 완료: total_count={total_count}")
+            return result
+        except Exception as e:
+            print(f"[WARN] 필터 적용 통계 계산 실패: {e}")
             import traceback
             traceback.print_exc()
             return {
