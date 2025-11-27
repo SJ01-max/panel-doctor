@@ -28,6 +28,7 @@ export interface UnifiedSearchResponse {
     intent: string;
     search_mode: string;
     limit?: number;
+    highlight_fields?: string[] | null;
   };
   selected_strategy: string;
   strategy_info: {

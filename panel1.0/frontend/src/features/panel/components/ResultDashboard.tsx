@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Download } from 'lucide-react';
 import { KPIStatCard } from './KPIStatCard';
@@ -5,7 +6,7 @@ import { BarChartCard } from './BarChartCard';
 import { DonutChartCard } from './DonutChartCard';
 import { PersonaCard } from './PersonaCard';
 import { PanelListCard, type PanelItem } from './PanelListCard';
-import { SemanticSearchResult } from './SemanticSearchResult';
+import { SemanticResultList } from './SemanticResultList';
 import { ModernTable } from '../../../components/ModernTable';
 import type { UnifiedSearchResponse } from '../../../api/search';
 import type { LlmSqlResponse } from '../../../api/llm';
@@ -289,7 +290,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
   // 의미 기반 검색인 경우 전용 UI 표시
   if (isSemanticSearch) {
     return (
-      <SemanticSearchResult
+      <SemanticResultList
         searchResult={searchResult}
         allResults={allResults}
         query={query}

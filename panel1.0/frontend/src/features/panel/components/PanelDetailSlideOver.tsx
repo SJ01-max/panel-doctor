@@ -14,6 +14,7 @@ interface PanelDetailSlideOverProps {
     semanticKeywords?: string[];
   } | null;
   query?: string; // 검색 질의 추가
+  highlightFields?: string[] | null; // LLM이 추천한 하이라이트 필드 목록
   onClose: () => void;
 }
 
@@ -21,6 +22,7 @@ export const PanelDetailSlideOver: React.FC<PanelDetailSlideOverProps> = ({
   panelId,
   panelData,
   query = '',
+  highlightFields = null,
   onClose
 }) => {
   const [panelDetail, setPanelDetail] = useState<PanelDetailData | null>(null);
@@ -977,12 +979,41 @@ export const PanelDetailSlideOver: React.FC<PanelDetailSlideOverProps> = ({
                 {panel.json_doc && (() => {
                   const allKeyValuePairs = extractKeyValuePairs(panel.json_doc);
                   
+                  // highlight_fields가 있으면 우선 정렬
+                  let sortedPairs = [...allKeyValuePairs];
+                  if (highlightFields && highlightFields.length > 0) {
+                    sortedPairs.sort((a, b) => {
+                      const aInHighlight = highlightFields.some(field => 
+                        a.key.includes(field) || field.includes(a.key)
+                      );
+                      const bInHighlight = highlightFields.some(field => 
+                        b.key.includes(field) || field.includes(b.key)
+                      );
+                      
+                      if (aInHighlight && !bInHighlight) return -1;
+                      if (!aInHighlight && bInHighlight) return 1;
+                      
+                      // 둘 다 highlight에 있으면 highlightFields 순서대로
+                      if (aInHighlight && bInHighlight) {
+                        const aIndex = highlightFields.findIndex(field => 
+                          a.key.includes(field) || field.includes(a.key)
+                        );
+                        const bIndex = highlightFields.findIndex(field => 
+                          b.key.includes(field) || field.includes(b.key)
+                        );
+                        return aIndex - bIndex;
+                      }
+                      
+                      return 0;
+                    });
+                  }
+                  
                   // 검색 질의와 관련된 항목만 필터링
                   const keyValuePairs = queryKeywords.length > 0
-                    ? allKeyValuePairs.filter(pair => 
+                    ? sortedPairs.filter(pair => 
                         isRelevantToQuery(pair.key, pair.value, queryKeywords)
                       )
-                    : allKeyValuePairs;
+                    : sortedPairs;
                   
                   // 관련 항목이 없으면 메시지 표시
                   if (keyValuePairs.length === 0 && queryKeywords.length > 0) {

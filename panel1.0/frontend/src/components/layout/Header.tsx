@@ -8,7 +8,7 @@ export default function Header() {
             <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-purple-600 rounded-lg flex items-center justify-center shadow-md">
               <i className="ri-dashboard-3-line text-white text-lg"></i>
             </div>
-            <span className="font-bold text-slate-800 text-lg tracking-tight">Panel Doctor</span>
+            <span className="font-bold text-slate-800 text-lg tracking-tight">Panel System</span>
           </div>
         </div>
       </div>

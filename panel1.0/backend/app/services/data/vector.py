@@ -315,16 +315,43 @@ class VectorSearchService(Singleton):
             
             if unique_keywords:
                 # 키워드 간 OR 조건으로 구성 (최소 하나라도 매칭되면 포함)
+                # ⚠️ 중요: 질문이 아닌 답변 내용만 매칭하도록 개선
+                # 부정 표현이 포함된 경우 제외 (예: "반려동물을 키워본 적 없다")
                 keyword_conditions = []
                 for i, keyword in enumerate(unique_keywords):
                     param_name = f"keyword_{i}"
-                    keyword_conditions.append(f"r_json.json_doc ILIKE %({param_name})s")
                     params[param_name] = f"%{keyword}%"
+                    
+                    # 부정 표현 패턴: 더 정교한 부정 표현 감지
+                    # "없다", "없음", "없습니다", "없어요", "안 한다", "하지 않는다", "키워본 적 없" 등
+                    neg_patterns = [
+                        f"%{keyword}%없다%",
+                        f"%{keyword}%없음%",
+                        f"%{keyword}%없습니다%",
+                        f"%{keyword}%없어요%",
+                        f"%{keyword}%안%",
+                        f"%{keyword}%하지%않%",
+                        f"%{keyword}%못%",
+                        f"%키워본%적%없%",
+                        f"%키워본%적%없다%",
+                        f"%키워본%적%없음%",
+                        f"%키워본%적%없습니다%"
+                    ]
+                    # 여러 부정 패턴을 OR로 결합
+                    neg_conditions = [f"r_json.json_doc ILIKE %(neg_{param_name}_{j})s" for j in range(len(neg_patterns))]
+                    for j, pattern in enumerate(neg_patterns):
+                        params[f"neg_{param_name}_{j}"] = pattern
+                    
+                    # 키워드가 포함되어 있으면서, 부정 표현이 없는 경우만 매칭
+                    keyword_conditions.append(
+                        f"(r_json.json_doc ILIKE %({param_name})s AND "
+                        f"NOT ({' OR '.join(neg_conditions)}))"
+                    )
                 
                 if keyword_conditions:
                     # OR 조건으로 결합: (keyword1 OR keyword2 OR ...)
                     where_conditions.append(f"({' OR '.join(keyword_conditions)})")
-                    print(f"[DEBUG] 키워드 필터링 적용: {len(unique_keywords)}개 키워드 (OR 조건)")
+                    print(f"[DEBUG] 키워드 필터링 적용: {len(unique_keywords)}개 키워드 (OR 조건, 부정 표현 제외)")
                     print(f"[DEBUG] 키워드 목록: {unique_keywords}")
                     print(f"[DEBUG] 원본 semantic_keywords: {semantic_keywords}")
         
@@ -338,9 +365,10 @@ class VectorSearchService(Singleton):
         
         where_clause = " AND ".join(where_conditions)
         
-        # 최적화된 하이브리드 검색 SQL
+        # ★ 최적화된 하이브리드 검색 SQL - Window Function 사용
         # 프론트엔드 호환성을 위해 gender, region, district, birth_year, age_text도 함께 반환
         # 키워드 필터링 + 벡터 정렬 결합
+        # COUNT(*) OVER()를 사용하여 별도의 COUNT 쿼리 없이 한 번에 처리
         sql_query = f"""
             SELECT 
                 pe.respondent_id,
@@ -349,7 +377,8 @@ class VectorSearchService(Singleton):
                 r_info.region,
                 r_info.district,
                 r_info.birth_year,
-                (pe.embedding_256 <=> %(vector)s::vector) as distance
+                (pe.embedding_256 <=> %(vector)s::vector) as distance,
+                COUNT(*) OVER() as total_count
             FROM core_v2.doc_embedding pe
             JOIN core_v2.respondent r_info ON pe.respondent_id = r_info.respondent_id
             JOIN core_v2.respondent_json r_json ON pe.respondent_id = r_json.respondent_id
@@ -374,160 +403,21 @@ class VectorSearchService(Singleton):
                 with conn.cursor() as cur:
                     cur.execute("SET LOCAL statement_timeout = 120000;")
                     
-                    # ★ 전체 개수 계산 (LIMIT 없이 COUNT 쿼리)
-                    # 벡터 검색의 경우 distance threshold를 포함한 COUNT 쿼리 실행
-                    total_count = 0
-                    
-                    # distance threshold를 포함한 COUNT 쿼리 (벡터 검색의 정확한 매칭 개수)
-                    if distance_threshold is not None:
-                        # 벡터 검색의 distance 조건을 포함한 COUNT 쿼리
-                        count_where_with_distance = where_clause  # distance 조건 포함
-                        count_params_with_distance = params.copy()
-                        # LIMIT 파라미터 제거 (COUNT 쿼리에는 불필요)
-                        if 'limit' in count_params_with_distance:
-                            del count_params_with_distance['limit']
-                        
-                        count_query_with_distance = f"""
-                            SELECT COUNT(*) as total_count
-                            FROM core_v2.doc_embedding pe
-                            JOIN core_v2.respondent r_info ON pe.respondent_id = r_info.respondent_id
-                            JOIN core_v2.respondent_json r_json ON pe.respondent_id = r_json.respondent_id
-                            WHERE pe.embedding_256 IS NOT NULL AND r_json.json_doc IS NOT NULL AND {count_where_with_distance}
-                        """
-                        
-                        try:
-                            cur.execute(count_query_with_distance, count_params_with_distance)
-                            count_row = cur.fetchone()
-                            total_count = count_row[0] if count_row else 0
-                            print(f"[DEBUG] 벡터 검색 전체 개수 (distance threshold 포함): {total_count}개")
-                        except Exception as e:
-                            print(f"[WARN] 벡터 검색 COUNT 쿼리 실패: {e}")
-                            # 실패 시 실제 결과 개수 사용
-                            total_count = 0
-                    
-                    # 구조적 필터 또는 키워드 필터가 있는 경우 (hybrid 검색)
-                    # 벡터 검색은 유사도 기반이므로 정확한 총 개수 계산이 어려움
-                    # 따라서 구조적 필터 + 키워드 필터만으로 COUNT 쿼리 실행
-                    # 주의: 벡터 검색으로 찾은 결과와는 다를 수 있음 (의미 기반 검색의 한계)
-                    elif filters or semantic_keywords:  # 구조적 필터 또는 키워드가 있는 경우 COUNT 쿼리 실행
-                        # distance 조건은 제외하고 구조적 필터 + 키워드 필터만 적용
-                        # 이렇게 하면 정확한 총 개수를 계산할 수 있지만, 벡터 검색의 의미 매칭은 반영되지 않음
-                        count_where_conditions = []
-                        count_params = {}
-                        
-                        # 구조적 필터만 복사 (distance 조건 제외)
-                        if filters:
-                            if filters.get("gender"):
-                                gender = filters["gender"]
-                                if gender in ["M", "남"]:
-                                    count_where_conditions.append("r_info.gender = %(gender)s")
-                                    count_params["gender"] = "남"
-                                elif gender in ["F", "여"]:
-                                    count_where_conditions.append("r_info.gender = %(gender)s")
-                                    count_params["gender"] = "여"
-                            
-                            age_range = filters.get("age_range") or filters.get("age")
-                            if age_range:
-                                if age_range == "10s":
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                                    )
-                                    count_params["age_min"] = 10
-                                    count_params["age_max"] = 19
-                                elif age_range == "20s":
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                                    )
-                                    count_params["age_min"] = 20
-                                    count_params["age_max"] = 29
-                                elif age_range == "30s":
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                                    )
-                                    count_params["age_min"] = 30
-                                    count_params["age_max"] = 39
-                                elif age_range == "40s":
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                                    )
-                                    count_params["age_min"] = 40
-                                    count_params["age_max"] = 49
-                                elif age_range == "50s":
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) BETWEEN %(age_min)s AND %(age_max)s"
-                                    )
-                                    count_params["age_min"] = 50
-                                    count_params["age_max"] = 59
-                                elif age_range in ["60s", "60s+"]:
-                                    count_where_conditions.append(
-                                        "(EXTRACT(YEAR FROM CURRENT_DATE) - r_info.birth_year) >= %(age_min)s"
-                                    )
-                                    count_params["age_min"] = 60
-                            
-                            if filters.get("region"):
-                                region = filters["region"]
-                                count_where_conditions.append("r_info.region LIKE %(region)s")
-                                count_params["region"] = f"%{region}%"
-                        
-                        # 키워드 필터링도 COUNT 쿼리에 포함
-                        if semantic_keywords and len(semantic_keywords) > 0:
-                            # 키워드 정제 및 분리 (메인 쿼리와 동일한 로직)
-                            stop_words = {
-                                '사용', '하는', '하는데', '한다', '한다고', '한다는', '한다면',
-                                '을', '를', '이', '가', '은', '는', '에', '에서', '로', '으로',
-                                '와', '과', '의', '도', '만', '부터', '까지', '보다', '처럼',
-                                '같이', '만큼', '정도', '여부', '경험', '전제품', '해주', '주세요'
-                            }
-                            all_keywords = []
-                            for kw in semantic_keywords:
-                                if not kw or not kw.strip():
-                                    continue
-                                words = kw.strip().split()
-                                for word in words:
-                                    word_clean = word.strip()
-                                    # 조사 제거
-                                    for particle in ['을', '를', '이', '가', '은', '는', '에', '에서', '로', '으로', '와', '과', '의', '도', '만']:
-                                        if word_clean.endswith(particle):
-                                            word_clean = word_clean[:-len(particle)]
-                                            break
-                                    
-                                    if word_clean and len(word_clean) >= 2 and word_clean not in stop_words:
-                                        all_keywords.append(word_clean)
-                            
-                            unique_keywords = list(dict.fromkeys(all_keywords))
-                            
-                            if unique_keywords:
-                                keyword_conditions = []
-                                for i, keyword in enumerate(unique_keywords):
-                                    param_name = f"keyword_{i}"
-                                    keyword_conditions.append(f"r_json.json_doc ILIKE %({param_name})s")
-                                    count_params[param_name] = f"%{keyword}%"
-                                
-                                if keyword_conditions:
-                                    count_where_conditions.append(f"({' OR '.join(keyword_conditions)})")
-                        
-                        count_where_clause = " AND ".join(count_where_conditions) if count_where_conditions else "1=1"
-                        
-                        count_query = f"""
-                            SELECT COUNT(*) as total_count
-                            FROM core_v2.doc_embedding pe
-                            JOIN core_v2.respondent r_info ON pe.respondent_id = r_info.respondent_id
-                            JOIN core_v2.respondent_json r_json ON pe.respondent_id = r_json.respondent_id
-                            WHERE pe.embedding_256 IS NOT NULL AND r_json.json_doc IS NOT NULL AND {count_where_clause}
-                        """
-                        
-                        cur.execute(count_query, count_params)
-                        count_row = cur.fetchone()
-                        total_count = count_row[0] if count_row else 0
-                        print(f"[DEBUG] 구조적 필터 + 키워드 필터 기반 전체 개수: {total_count}개")
-                        print(f"[INFO] 주의: 벡터 검색은 유사도 기반이므로, 이 COUNT는 키워드 필터링만 반영한 정확한 개수입니다.")
-                        print(f"[INFO] 벡터 검색으로 찾은 의미적으로 유사한 패널의 정확한 총 개수는 계산하기 어렵습니다.")
-                    
-                    # 실제 검색 결과 조회
+                    # ★ Window Function을 사용하여 COUNT와 SELECT를 한 번에 처리
+                    # 별도의 COUNT 쿼리 제거 - 성능 최적화
                     cur.execute(sql_query, params)
                     columns = [desc[0] for desc in cur.description]
                     rows = cur.fetchall()
                     results = [dict(zip(columns, row)) for row in rows]
+                    
+                    # total_count 추출 (첫 번째 행에서 Window Function 결과)
+                    total_count = 0
+                    if results and len(results) > 0:
+                        total_count = results[0].get('total_count', 0)
+                        # total_count 필드 제거 (메타데이터이므로)
+                        for result in results:
+                            if 'total_count' in result:
+                                del result['total_count']
                     
                     # 프론트엔드 호환성을 위해 응답 형식 변환
                     from datetime import datetime
@@ -570,10 +460,118 @@ class VectorSearchService(Singleton):
                         # total_count를 메타데이터로 추가
                         result['_total_count'] = total_count
                     
-                    print(f"[INFO] 하이브리드 검색 완료: {len(results)}개 결과 (전체: {total_count}개)")
+                    # ★ 결과 품질 검증 및 재랭킹 (키워드 매칭 빈도 고려)
+                    if semantic_keywords and len(semantic_keywords) > 0:
+                        # 키워드 매칭 빈도 계산 및 재랭킹
+                        results = self._rerank_by_keyword_match(results, semantic_keywords)
+                    
+                    print(f"[INFO] 하이브리드 검색 완료: {len(results)}개 결과 (전체: {total_count}개) - Window Function 사용")
                     return results
             finally:
                 return_db_connection(conn)
         except Exception as e:
             raise RuntimeError(f"SQL 실행 실패: {str(e)}")
+    
+    def _rerank_by_keyword_match(
+        self, 
+        results: List[Dict[str, Any]], 
+        semantic_keywords: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        키워드 매칭 빈도를 고려한 결과 재랭킹
+        
+        Args:
+            results: 검색 결과 리스트
+            semantic_keywords: 의미 키워드 리스트
+        
+        Returns:
+            재랭킹된 결과 리스트
+        """
+        if not results or not semantic_keywords:
+            return results
+        
+        # 키워드 정제 (조사 제거 등)
+        stop_words = {
+            '사용', '하는', '하는데', '한다', '한다고', '한다는', '한다면',
+            '을', '를', '이', '가', '은', '는', '에', '에서', '로', '으로',
+            '와', '과', '의', '도', '만', '부터', '까지', '보다', '처럼',
+            '같이', '만큼', '정도', '여부', '경험', '전제품', '해주', '주세요'
+        }
+        
+        clean_keywords = []
+        for kw in semantic_keywords:
+            if not kw or not kw.strip():
+                continue
+            words = kw.strip().split()
+            for word in words:
+                word_clean = word.strip()
+                for particle in ['을', '를', '이', '가', '은', '는', '에', '에서', '로', '으로', '와', '과', '의', '도', '만']:
+                    if word_clean.endswith(particle):
+                        word_clean = word_clean[:-len(particle)]
+                        break
+                if word_clean and len(word_clean) >= 2 and word_clean not in stop_words:
+                    clean_keywords.append(word_clean.lower())
+        
+        if not clean_keywords:
+            return results
+        
+        # 각 결과에 대해 키워드 매칭 점수 계산
+        for result in results:
+            json_doc = result.get('json_doc', '') or result.get('content', '')
+            if not json_doc:
+                result['keyword_match_score'] = 0.0
+                continue
+            
+            json_doc_lower = json_doc.lower()
+            match_count = 0
+            total_keywords = len(clean_keywords)
+            
+            # 키워드 매칭 빈도 계산 (부정 표현 제외)
+            for keyword in clean_keywords:
+                if keyword in json_doc_lower:
+                    # 부정 표현 체크
+                    keyword_pos = json_doc_lower.find(keyword)
+                    if keyword_pos != -1:
+                        # 키워드 주변 텍스트 확인 (앞뒤 50자)
+                        context_start = max(0, keyword_pos - 50)
+                        context_end = min(len(json_doc_lower), keyword_pos + len(keyword) + 50)
+                        context = json_doc_lower[context_start:context_end]
+                        
+                        # 부정 표현 패턴 체크
+                        neg_patterns = ['없다', '없음', '없습니다', '없어요', '안', '하지않', '못', '키워본적없']
+                        is_negative = any(neg in context for neg in neg_patterns)
+                        
+                        if not is_negative:
+                            match_count += 1
+            
+            # 키워드 매칭 점수 (0.0 ~ 1.0)
+            keyword_match_score = match_count / total_keywords if total_keywords > 0 else 0.0
+            result['keyword_match_score'] = keyword_match_score
+        
+        # 재랭킹: distance와 keyword_match_score를 결합
+        # distance는 낮을수록 좋음, keyword_match_score는 높을수록 좋음
+        # 최종 점수 = (1 - normalized_distance) * 0.6 + keyword_match_score * 0.4
+        for result in results:
+            distance = result.get('distance', 2.0)
+            keyword_score = result.get('keyword_match_score', 0.0)
+            
+            # distance 정규화 (0~2 범위를 0~1로)
+            normalized_distance = min(1.0, distance / 2.0)
+            vector_score = 1.0 - normalized_distance
+            
+            # 최종 점수 계산 (벡터 60%, 키워드 40%)
+            final_score = vector_score * 0.6 + keyword_score * 0.4
+            result['_rerank_score'] = final_score
+        
+        # 재랭킹 점수로 정렬
+        results.sort(key=lambda x: x.get('_rerank_score', 0.0), reverse=True)
+        
+        # 임시 점수 필드 제거
+        for result in results:
+            if '_rerank_score' in result:
+                del result['_rerank_score']
+            if 'keyword_match_score' in result:
+                del result['keyword_match_score']
+        
+        return results
 

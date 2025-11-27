@@ -210,8 +210,14 @@ export default function SearchPage() {
           return <DashboardSkeleton />;
         }
         
-        if (hasSearched && allResults.length > 0 && searchResult) {
-          console.log('[🎨 RENDER] ✅ 결과 대시보드 렌더링');
+        // count > 0이면 결과가 있는 것으로 판단 (results 배열이 비어있어도)
+        const hasResults = (searchResult?.unified?.count ?? 0) > 0 || allResults.length > 0;
+        if (hasSearched && hasResults && searchResult) {
+          console.log('[🎨 RENDER] ✅ 결과 대시보드 렌더링', {
+            allResultsLength: allResults.length,
+            count: searchResult?.unified?.count,
+            hasResults
+          });
           return (
             <ResultDashboard
               searchResult={searchResult}
@@ -262,6 +268,7 @@ export default function SearchPage() {
         panelId={selectedPanel}
         panelData={selectedPanelData}
         query={query}
+        highlightFields={searchResult?.unified?.parsed_query?.highlight_fields || null}
         onClose={() => {
           setSelectedPanel(null);
           setSelectedPanelData(null);

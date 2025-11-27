@@ -107,6 +107,36 @@ const SimilarityCard: React.FC<{
     scorePercent >= 70 ? 'text-blue-600 bg-blue-50 border-blue-200' :
     'text-gray-600 bg-gray-50 border-gray-200';
 
+  // 인구통계 정보 필터링 (성별, 나이, 지역, 출생년도 등)
+  const filteredHighlights = React.useMemo(() => {
+    if (!highlights || highlights.length === 0) return [];
+    
+    // 인구통계 정보 패턴
+    const demographicPatterns = [
+      /^성별[:\s]/i,
+      /^나이[:\s]/i,
+      /^연령[:\s]/i,
+      /^지역[:\s]/i,
+      /^출생[:\s]/i,
+      /^\d+세/i,
+      /^\d+년생/i,
+      /남[성자]?[:\s]/i,
+      /여[성자]?[:\s]/i,
+      /경기|서울|부산|대구|인천|광주|대전|울산|강원|충북|충남|전북|전남|경북|경남|제주/i,
+    ];
+    
+    return highlights.filter(highlight => {
+      const trimmed = highlight.trim();
+      // 인구통계 패턴과 일치하는지 확인
+      const isDemographic = demographicPatterns.some(pattern => pattern.test(trimmed));
+      // "성별:", "나이:", "지역:" 같은 형식도 제외
+      if (isDemographic) return false;
+      // 너무 짧은 항목 제외 (2글자 이하)
+      if (trimmed.length <= 2) return false;
+      return true;
+    });
+  }, [highlights]);
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
       <div className="flex items-center justify-between mb-4">
@@ -117,13 +147,13 @@ const SimilarityCard: React.FC<{
           {scorePercent}%
         </span>
       </div>
-      {highlights && highlights.length > 0 && (
+      {filteredHighlights && filteredHighlights.length > 0 && (
         <div className="mt-4 pt-4 border-t border-gray-100">
           <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
             매칭 근거
           </div>
           <ul className="space-y-2">
-            {highlights.map((highlight, idx) => (
+            {filteredHighlights.map((highlight, idx) => (
               <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
                 <span className="text-violet-500 mt-1">•</span>
                 <span>{highlight}</span>
@@ -506,6 +536,7 @@ export const PanelDetailDrawer: React.FC<PanelDetailDrawerProps> = ({
     </>
   );
 };
+
 
 
 

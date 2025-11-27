@@ -27,9 +27,11 @@ class LlmStructuredParser:
             {
                 "filters": {...},
                 "semantic_keywords": [...],
+                "search_text": "RICH_DESCRIPTIVE_SENTENCE" | null,
                 "intent": "panel_search",
                 "search_mode": "auto",
-                "limit": 100 | null
+                "limit": 100 | null,
+                "highlight_fields": ["필드명1", "필드명2", ...] | null
             }
         """
         if not model:
@@ -65,9 +67,11 @@ class LlmStructuredParser:
             return {
                 "filters": {},
                 "semantic_keywords": [],
+                "search_text": None,
                 "intent": "panel_search",
                 "search_mode": "auto",
-                "limit": None
+                "limit": None,
+                "highlight_fields": None
             }
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
@@ -105,10 +109,14 @@ class LlmStructuredParser:
             parsed["filters"] = {}
         if "semantic_keywords" not in parsed:
             parsed["semantic_keywords"] = []
+        if "search_text" not in parsed:
+            parsed["search_text"] = None
         if "intent" not in parsed:
             parsed["intent"] = "panel_search"
         if "limit" not in parsed:
             parsed["limit"] = None
+        if "highlight_fields" not in parsed:
+            parsed["highlight_fields"] = None
         
         # filters 정규화
         filters = parsed.get("filters", {})
@@ -120,6 +128,11 @@ class LlmStructuredParser:
         if not isinstance(keywords, list):
             parsed["semantic_keywords"] = []
         
+        # search_text 정규화
+        search_text = parsed.get("search_text")
+        if search_text is not None and not isinstance(search_text, str):
+            parsed["search_text"] = None
+        
         # limit 정규화
         limit = parsed.get("limit")
         if limit is not None:
@@ -127,6 +140,19 @@ class LlmStructuredParser:
                 parsed["limit"] = int(limit)
             except (ValueError, TypeError):
                 parsed["limit"] = None
+        
+        # highlight_fields 정규화
+        highlight_fields = parsed.get("highlight_fields")
+        if highlight_fields is not None:
+            if not isinstance(highlight_fields, list):
+                parsed["highlight_fields"] = None
+            else:
+                # 빈 배열이면 null로 변환
+                if len(highlight_fields) == 0:
+                    parsed["highlight_fields"] = None
+                else:
+                    # 문자열 리스트로 정규화
+                    parsed["highlight_fields"] = [str(field) for field in highlight_fields if field]
         
         return parsed
 

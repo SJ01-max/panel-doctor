@@ -184,6 +184,8 @@ export const usePanelSearch = () => {
         strategy: unifiedResult?.strategy
       });
       
+      // has_results가 True이고 count > 0이면 결과가 있다고 판단
+      // results 배열이 비어있어도 count가 있으면 결과가 있는 것으로 처리
       if (unifiedResult && unifiedResult.has_results && unifiedResult.count > 0) {
         // ... (필터 설정 부분은 그대로 유지) ...
         // 필터 칩 생성 (age 또는 age_range 모두 지원)
@@ -201,8 +203,15 @@ export const usePanelSearch = () => {
         }
         setActiveFilters(filters);
 
-        // 즉시 검색 결과 렌더링 준비
+        // 즉시 검색 결과 렌더링 준비 (먼저 통합 검색 결과만 사용)
         const results = unifiedResult.results || [];
+        console.log('[🔍 SEARCH] 결과 설정:', {
+          resultsLength: results.length,
+          count: unifiedResult.count,
+          has_results: unifiedResult.has_results,
+          strategy: unifiedResult.strategy
+        });
+        
         currentUnifiedResultRef.current = unifiedResult;
         
         // startTransition 제거 - 즉시 렌더링
@@ -219,7 +228,7 @@ export const usePanelSearch = () => {
         setIsSearching(false);
         setHasSearched(true);
 
-        // 3. 그 다음 비동기 호출
+        // 3. 그 다음 비동기 호출 (AI 인사이트는 비동기 처리)
         loadInsightAsync(queryToUse.trim(), unifiedResult).catch(err => {
           console.warn('AI 분석 실패:', err);
           setIsAnalyzing(false); // 실패 시에만 로딩 끄기
@@ -364,6 +373,7 @@ export const usePanelSearch = () => {
       setIsAnalyzing(false); // AI 분석 로딩 완료
     }
   };
+
 
   const handleDownloadExcel = async () => {
     if (!query || query.trim() === '') {

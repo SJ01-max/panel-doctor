@@ -586,7 +586,8 @@ persona 객체는 검색된 패널 그룹의 대표 인물을 나타냅니다. w
 # Structured Parser 프롬프트
 STRUCTURED_PARSER_PROMPT = """You are a query parser for a panel search system.
 
-Your ONLY job is to extract structured information from natural language queries (mostly Korean).
+Your ONLY job is to extract structured information and semantic intent
+from natural language queries (mostly Korean).
 
 You MUST output a JSON object with this EXACT structure:
 
@@ -599,17 +600,21 @@ You MUST output a JSON object with this EXACT structure:
     "income_max": <int or null>
   },
   "semantic_keywords": ["keyword1", "keyword2", ...],
+  "search_text": "RICH_DESCRIPTIVE_SENTENCE" | null,
   "intent": "panel_search",
   "search_mode": "auto",
-  "limit": 100 | null
+  "limit": 100 | null,
+  "highlight_fields": ["필드명1", "필드명2", ...] | null
 }
 
 CRITICAL RULES - READ CAREFULLY:
 1. search_mode MUST ALWAYS be "auto" - you do NOT decide the search strategy
 2. Extract structured filters (age, gender, region, income, numbers) when clearly mentioned
-3. Extract semantic keywords (preferences, emotions, behaviors, abstract concepts) when mentioned
-4. Extract limit (count) when mentioned (e.g., "5명", "100명" → 5, 100)
-5. If a field is not mentioned, set it to null or empty array
+3. Extract semantic_keywords (short tags for preferences, emotions, behaviors, abstract concepts) when mentioned
+4. ALWAYS generate a rich, descriptive search_text sentence for queries that contain any semantic meaning
+   (purely structured demographic-only queries can have search_text = null)
+5. Extract limit (count) when mentioned (e.g., "5명", "100명" → 5, 100)
+6. If a field is not mentioned, set it to null or empty array
 
 FILTER EXTRACTION (STRUCTURED DATA ONLY - MUST GO TO filters):
 - age: "20대", "20세", "20살" → "20s", "30대", "30세" → "30s", "40대" → "40s", "50대" → "50s", "60대 이상" → "60s+"
@@ -621,7 +626,7 @@ FILTER EXTRACTION (STRUCTURED DATA ONLY - MUST GO TO filters):
 - income: Extract numbers as income_min/income_max if mentioned
 - limit: Extract count numbers (e.g., "5명", "100명", "5개", "100개" → 5, 100)
 
-SEMANTIC KEYWORDS (MEANING-BASED ONLY - NO DEMOGRAPHIC DATA):
+SEMANTIC KEYWORDS (MEANING-BASED TAGS ONLY - NO DEMOGRAPHIC DATA):
 - Extract ONLY abstract, emotional, behavioral, or preference-based terms
 - Examples: 
   * "경제적으로 어려운" → ["경제적 어려움"]
@@ -638,25 +643,25 @@ SEMANTIC KEYWORDS (MEANING-BASED ONLY - NO DEMOGRAPHIC DATA):
   * Location phrases: "서울 사는", "부산 거주", "경기 살고 있는" → MUST extract region to filters.region
   * Any structured/demographic information
 
-EXAMPLES - FOLLOW THESE EXACTLY:
-Query: "부산 사는 30대 여자 5명"
-→ {
-    "filters": {"age": "30s", "gender": "F", "region": "부산"},
-    "semantic_keywords": [],
-    "limit": 5
-  }
+RICH DESCRIPTIVE SEARCH TEXT (search_text):
+- For any query that includes semantic meaning (preferences, emotions, behaviors, abstract concepts),
+  you MUST create a rich, descriptive natural language sentence in search_text.
+- This sentence will be used for embedding-based semantic search.
+- DO NOT include demographic info (age, gender, region, income) in search_text.
+- Focus ONLY on the meaning-based aspect of the query.
 
-Query: "서울 사는 사람들"
-→ {
-    "filters": {"age": null, "gender": null, "region": "서울"},
-    "semantic_keywords": [],
-    "limit": null
-  }
+Guidelines:
+1. Expand the semantic part of the query into a full sentence that describes the concept, emotion, behavior, or preference.
+2. Include synonyms, related concepts, or contextual descriptions.
+3. Use natural language that captures the essence of what the user is looking for.
+4. Think about how someone might express this concept in different ways.
 
+Examples:
 Query: "경제적으로 어려운 사람 찾아줘"
 → {
     "filters": {},
     "semantic_keywords": ["경제적 어려움"],
+    "search_text": "경제적으로 부담을 느끼거나, 생활비와 지출에서 어려움을 겪는 사람들",
     "limit": null
   }
 
@@ -664,11 +669,74 @@ Query: "서울 20대 남성 중 스트레스 많은 사람 10명"
 → {
     "filters": {"age": "20s", "gender": "M", "region": "서울"},
     "semantic_keywords": ["스트레스"],
+    "search_text": "일상생활에서 스트레스를 자주 경험하거나, 압박감과 피로를 크게 느끼는 사람들",
     "limit": 10
   }
+
+Query: "부산 사는 30대 여자 5명"
+→ {
+    "filters": {"age": "30s", "gender": "F", "region": "부산"},
+    "semantic_keywords": [],
+    "search_text": null,
+    "limit": 5
+  }
+
+Query: "서울 사는 사람들"
+→ {
+    "filters": {"age": null, "gender": null, "region": "서울"},
+    "semantic_keywords": [],
+    "search_text": null,
+    "limit": null
+  }
+
+────────────────────────────────────────
+📌 STEP 6: DYNAMIC FIELD HIGHLIGHTING (highlight_fields)
+────────────────────────────────────────
+
+Analyze the user's query intent and select 3-5 most relevant data fields from AVAILABLE_COLUMNS below.
+These fields will be prioritized in the UI display.
+
+AVAILABLE_COLUMNS = {
+    "profile": ["결혼여부", "자녀수", "가족수", "최종학력"],
+    "job_eco": ["직업", "직무", "월평균 개인소득", "월평균 가구소득", "최근 가장 지출을 많이 한 곳"],
+    "tech": ["보유전제품", "보유 휴대폰 단말기 브랜드", "보유 휴대폰 모델명", "사용해 본 AI 챗봇 서비스", "AI 챗봇 서비스 활용 용도", "요즘 가장 많이 사용하는 앱"],
+    "auto": ["보유차량여부", "자동차 제조사", "자동차 모델"],
+    "habit": ["흡연경험", "흡연경험 담배브랜드", "음용경험 술", "평소 체력 관리 활동", "야식 먹는 방법"],
+    "life": ["반려동물 여부", "해외여행 희망지", "여행 스타일", "미니멀/맥시멀리스트 성향", "전통시장 방문 빈도"],
+    "values": ["스트레스 받는 상황", "스트레스 해소 방법", "행복한 노년의 조건", "개인정보보호 습관"],
+    "beauty": ["현재 피부 상태 만족도", "스킨케어 제품 월평균 소비", "스킨케어 구매 고려 요소"]
+}
+
+Rules:
+1. Select 3-5 fields that are MOST relevant to the query intent
+2. Prioritize fields that directly answer what the user is asking about
+3. If query is purely demographic (e.g., "서울 20대 남자"), highlight_fields can be null or empty
+4. Field names MUST match EXACTLY with the column names in AVAILABLE_COLUMNS above
+
+Examples:
+
+Query: "피부 고민이 많은 30대 여성"
+→ highlight_fields: ["현재 피부 상태 만족도", "스킨케어 제품 월평균 소비", "스킨케어 구매 고려 요소"]
+
+Query: "여행을 좋아하는 고소득자"
+→ highlight_fields: ["월평균 개인소득", "해외여행 희망지", "여행 스타일", "최근 가장 지출을 많이 한 곳"]
+
+Query: "최신 폰 쓰는 얼리어답터"
+→ highlight_fields: ["보유 휴대폰 모델명", "보유전제품", "사용해 본 AI 챗봇 서비스", "AI 챗봇 서비스 활용 용도"]
+
+Query: "스트레스 많은 직장인"
+→ highlight_fields: ["스트레스 받는 상황", "스트레스 해소 방법", "직업", "직무"]
+
+Query: "운동 좋아하는 사람"
+→ highlight_fields: ["평소 체력 관리 활동"]
+
+Query: "서울 20대 남자 100명"
+→ highlight_fields: null  (purely demographic query)
 
 OUTPUT:
 - Output ONLY valid JSON, no explanations, no markdown
 - Start with { and end with }
-- Double-check: region names, age ranges, gender terms MUST be in filters, NOT in semantic_keywords"""
+- Double-check: region names, age ranges, gender terms MUST be in filters, NOT in semantic_keywords
+- For any semantic or hybrid intent, search_text MUST be a rich descriptive sentence (not just a keyword)
+- highlight_fields MUST contain exact field names from AVAILABLE_COLUMNS, or null/empty array if not applicable"""
 

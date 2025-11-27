@@ -101,6 +101,195 @@ class SearchService:
         result["selected_strategy"] = strategy
         result["strategy_info"] = self.selector.get_strategy_info(strategy)
         
+        # semantic_first 또는 hybrid 전략일 때 확장 필드 생성 (semantic_keywords가 있는 경우)
+        has_semantic_keywords = bool(semantic_keywords and len(semantic_keywords) > 0)
+        if (strategy == "semantic_first" or (strategy == "hybrid" and has_semantic_keywords)) and result.get("has_results") and result.get("count", 0) > 0:
+            try:
+                print(f"[INFO] {strategy} 전략 확장 필드 생성 시작 (semantic_keywords: {len(semantic_keywords) if semantic_keywords else 0}개)...")
+                from app.services.semantic.auto_dictionary import generate_expanded_keywords
+                from app.services.semantic.features import extract_panel_features
+                from app.services.semantic.match_reason import generate_match_reasons
+                from app.services.semantic.common_insights import generate_common_features
+                from app.services.semantic.semantic_keywords import generate_semantic_keywords
+                from app.services.semantic.extract_entities import extract_car_entities
+                
+                results = result.get("results", [])
+                top_panels = results[:20]  # 상위 20개만 처리 (성능 최적화)
+                
+                # 0. 자동 사전 생성 (expanded_keywords)
+                expanded_keywords = generate_expanded_keywords(user_query)
+                print(f"[INFO] 자동 사전 생성 완료: {len(expanded_keywords)}개 키워드")
+                
+                # 패널 텍스트 수집 (TF-IDF 계산용)
+                all_panel_texts = []
+                for panel_row in top_panels:
+                    panel_text = panel_row.get("json_doc") or panel_row.get("content") or ""
+                    if isinstance(panel_text, dict):
+                        import json
+                        panel_text = json.dumps(panel_text, ensure_ascii=False)
+                    elif not isinstance(panel_text, str):
+                        panel_text = str(panel_text)
+                    all_panel_texts.append(panel_text)
+                
+                # 1. 각 패널의 features 추출 (TF-IDF 기반 affinity 포함)
+                # 주의: extract_panel_features 내부에서 extract_car_entities를 개별 호출하지 않도록 수정 필요
+                panel_features_list = []
+                for idx, panel_row in enumerate(top_panels):
+                    try:
+                        features = extract_panel_features(
+                            panel_row,
+                            expanded_keywords=expanded_keywords,
+                            all_panel_texts=all_panel_texts  # 전체 텍스트 전달 (TF-IDF 계산용)
+                        )
+                        panel_features_list.append(features)
+                    except Exception as e:
+                        print(f"[WARN] 패널 {idx} features 추출 실패 (무시): {e}")
+                        continue
+                
+                # 2. common_features 생성 (상위 10개 패널만 사용 - 성능 최적화)
+                common_features = []
+                if panel_features_list:
+                    try:
+                        # 상위 10개 패널만으로 공통 특징 생성 (성능 최적화)
+                        top_10_features = panel_features_list[:10]
+                        common_features = generate_common_features(top_10_features)
+                        print(f"[INFO] common_features 생성 완료: {len(common_features)}개 (상위 10개 패널 기반)")
+                    except Exception as e:
+                        print(f"[WARN] common_features 생성 실패 (무시): {e}")
+                
+                # 3. matching_keywords 확장 생성 (자동 사전 키워드 우선 사용, LLM 확장은 선택적)
+                matching_keywords = semantic_keywords.copy() if semantic_keywords else []
+                
+                # 자동 사전 키워드 추가 (빠름)
+                for kw in expanded_keywords:
+                    if kw not in matching_keywords:
+                        matching_keywords.append(kw)
+                
+                # LLM 기반 확장은 선택적 (성능 최적화: 필요시에만)
+                ENABLE_LLM_KEYWORD_EXPANSION = False  # 기본값: False (자동 사전만 사용)
+                if ENABLE_LLM_KEYWORD_EXPANSION and common_features:
+                    try:
+                        llm_expanded = generate_semantic_keywords(
+                            query=user_query,
+                            common_features=common_features,
+                            top_panel_features=[f.to_dict() for f in panel_features_list[:5]]  # 상위 5개만
+                        )
+                        # 기존 키워드와 합치기 (중복 제거)
+                        for kw in llm_expanded:
+                            if kw not in matching_keywords:
+                                matching_keywords.append(kw)
+                        print(f"[INFO] matching_keywords LLM 확장 완료: {len(matching_keywords)}개")
+                    except Exception as e:
+                        print(f"[WARN] matching_keywords LLM 확장 실패 (무시): {e}")
+                
+                # 4. Brand/Car Type Top N 계산 (차량 관련 질의일 때만)
+                brand_top = {}
+                car_type_top = {}
+                all_brand_affinity = {}  # 전체 패널의 브랜드 affinity 집계용
+                all_car_type_affinity = {}  # 전체 패널의 차량 타입 affinity 집계용
+                
+                # 질의가 차량/자동차 관련인지 확인
+                car_related_keywords = ['차', '자동차', '차량', '브랜드', '모델', '운전', '드라이브', '차고', '소유차', '보유차']
+                query_lower = user_query.lower()
+                semantic_keywords_lower = [kw.lower() for kw in semantic_keywords] if semantic_keywords else []
+                all_query_text = ' '.join([query_lower] + semantic_keywords_lower)
+                
+                is_car_related = any(keyword in all_query_text for keyword in car_related_keywords)
+                
+                if is_car_related:
+                    try:
+                        # 전체 패널 텍스트로 한 번만 계산
+                        if all_panel_texts and len(all_panel_texts) > 0:
+                            car_entities = extract_car_entities(all_panel_texts)
+                            brand_affinity_all = car_entities.get("brand_affinity", {})
+                            car_type_affinity_all = car_entities.get("car_type_affinity", {})
+                            
+                            print(f"[DEBUG] Brand affinity 전체: {len(brand_affinity_all)}개, Car type affinity 전체: {len(car_type_affinity_all)}개")
+                            
+                            # 상위 5개만 추출 (Top N)
+                            brand_top = dict(sorted(brand_affinity_all.items(), key=lambda x: x[1], reverse=True)[:5])
+                            car_type_top = dict(sorted(car_type_affinity_all.items(), key=lambda x: x[1], reverse=True)[:5])
+                            
+                            # 각 패널의 brand_affinity, car_type_affinity를 전체 결과에서 추출
+                            all_brand_affinity = brand_affinity_all
+                            all_car_type_affinity = car_type_affinity_all
+                            
+                            print(f"[INFO] Brand/Car Type Top N 계산 완료 - brand_top: {len(brand_top)}개, car_type_top: {len(car_type_top)}개")
+                            if brand_top:
+                                print(f"[DEBUG] brand_top 샘플: {list(brand_top.items())[:3]}")
+                            if car_type_top:
+                                print(f"[DEBUG] car_type_top 샘플: {list(car_type_top.items())[:3]}")
+                        else:
+                            print(f"[WARN] all_panel_texts가 비어있음 - Brand/Car Type 계산 스킵")
+                    except Exception as e:
+                        import traceback
+                        print(f"[WARN] Brand/Car Type 추출 실패 (무시): {e}")
+                        print(f"[WARN] 상세:\n{traceback.format_exc()}")
+                else:
+                    print(f"[INFO] 질의가 차량 관련이 아니므로 Brand/Car Type 분석 스킵: {user_query}")
+                
+                # 5. summary_sentence 생성
+                summary_sentence = f"이 검색은 {len(results)}명의 패널이 발견되었으며, 평균 유사도 점수가 높게 나타났습니다."
+                if common_features and len(common_features) > 0:
+                    summary_sentence = f"이 검색은 {common_features[0]} 등의 공통 성향을 가진 {len(results)}명의 패널이 발견되었습니다."
+                
+                # 6. 각 패널에 match_reasons 추가 및 brand_affinity, car_type_affinity 매핑 (상위 10개만 - 성능 최적화)
+                for idx, panel_row in enumerate(top_panels[:10]):
+                    try:
+                        panel_features = panel_features_list[idx] if idx < len(panel_features_list) else None
+                        panel_text = all_panel_texts[idx] if idx < len(all_panel_texts) else ""
+                        distance = panel_row.get("distance", 2.0)
+                        score = max(0, min(100, int((1 - distance / 2.0) * 100)))
+                        
+                        if panel_features:
+                            match_reasons = generate_match_reasons(
+                                query=user_query,
+                                panel_features=panel_features,
+                                panel_text=panel_text[:500] if panel_text else "",
+                                score=score
+                            )
+                            panel_row["match_reasons"] = match_reasons
+                            
+                            # panel_features에 전체 계산된 brand_affinity, car_type_affinity 매핑
+                            panel_features_dict = panel_features.to_dict()
+                            # 전체 결과에서 현재 패널 텍스트에 포함된 브랜드/차량 타입만 추출
+                            panel_text_lower = panel_text.lower() if panel_text else ""
+                            panel_brand_affinity = {}
+                            panel_car_type_affinity = {}
+                            
+                            for brand, brand_score in all_brand_affinity.items():
+                                if brand.lower() in panel_text_lower:
+                                    panel_brand_affinity[brand] = brand_score
+                            
+                            for car_type, car_score in all_car_type_affinity.items():
+                                car_type_lower = car_type.lower()
+                                if car_type_lower in panel_text_lower or any(ct in panel_text_lower for ct in car_type_lower.split()):
+                                    panel_car_type_affinity[car_type] = car_score
+                            
+                            panel_features_dict["brand_affinity"] = panel_brand_affinity
+                            panel_features_dict["car_type_affinity"] = panel_car_type_affinity
+                            
+                            panel_row["panel_features"] = panel_features_dict
+                            panel_row["brand_affinity"] = panel_brand_affinity
+                            panel_row["car_type_affinity"] = panel_car_type_affinity
+                    except Exception as e:
+                        print(f"[WARN] 패널 {idx} match_reasons 생성 실패 (무시): {e}")
+                        continue
+                
+                # 확장 필드를 result에 추가
+                result["matching_keywords"] = matching_keywords
+                result["common_features"] = common_features
+                result["summary_sentence"] = summary_sentence
+                result["brand_top"] = brand_top
+                result["car_type_top"] = car_type_top
+                
+                print(f"[INFO] {strategy} 전략 확장 필드 생성 완료")
+            except Exception as e:
+                import traceback
+                print(f"[ERROR] semantic_first 확장 필드 생성 중 오류 (무시): {e}")
+                print(f"[ERROR] 상세:\n{traceback.format_exc()}")
+                # 오류가 나도 기본 결과는 반환
+        
         print(f"[DEBUG] ========== 최종 결과 ==========")
         print(f"  전략: {strategy}")
         print(f"  결과 개수: {result.get('count', 0)}")
@@ -127,7 +316,13 @@ class SearchService:
                 limit=limit
             )
         elif strategy == "hybrid":
-            return self.hybrid_search.search(filters=filters, semantic_keywords=semantic_keywords, limit=limit)
+            # ★ search_text 전달 (LLM이 생성한 풍부한 설명 문장)
+            return self.hybrid_search.search(
+                filters=filters, 
+                semantic_keywords=semantic_keywords,
+                search_text=search_text,  # LLM이 생성한 풍부한 설명 문장 전달
+                limit=limit
+            )
         else:
             return {
                 "results": [],

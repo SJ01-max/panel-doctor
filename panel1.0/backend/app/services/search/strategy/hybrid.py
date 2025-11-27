@@ -26,6 +26,7 @@ class HybridSearch(SearchStrategy):
         self,
         filters: Optional[Dict[str, Any]] = None,
         semantic_keywords: Optional[List[str]] = None,
+        search_text: Optional[str] = None,
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -33,7 +34,8 @@ class HybridSearch(SearchStrategy):
         
         Args:
             filters: 필터 딕셔너리
-            semantic_keywords: 의미 키워드 리스트
+            semantic_keywords: 의미 키워드 리스트 (키워드 필터링용)
+            search_text: LLM이 생성한 풍부한 설명 문장 (벡터 검색용, 우선순위 높음)
             limit: 결과 제한 수
         
         Returns:
@@ -45,7 +47,7 @@ class HybridSearch(SearchStrategy):
                 "keywords_used": [...]
             }
         """
-        if not semantic_keywords:
+        if not semantic_keywords and not search_text:
             return {
                 "results": [],
                 "count": 0,
@@ -53,11 +55,13 @@ class HybridSearch(SearchStrategy):
                 "filters_applied": filters or {},
                 "keywords_used": [],
                 "has_results": False,
-                "error": "semantic_keywords가 필요합니다"
+                "error": "semantic_keywords 또는 search_text가 필요합니다"
             }
         
-        # 키워드를 하나의 검색 텍스트로 결합
-        search_text = " ".join(semantic_keywords)
+        # ★ search_text 우선 사용 (LLM이 생성한 풍부한 설명 문장)
+        # search_text가 없으면 semantic_keywords를 결합 (하위 호환성)
+        if not search_text and semantic_keywords:
+            search_text = " ".join(semantic_keywords)
         
         try:
             # limit이 없으면 구조적 필터만으로 먼저 카운트를 구함

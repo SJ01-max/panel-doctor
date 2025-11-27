@@ -249,15 +249,8 @@ class SQLBuilder:
             else:
                 quoted_table = f'"{table_name_used}"'
             
-            # 전체 개수 먼저 계산 (LIMIT 없이 COUNT 쿼리)
-            count_query = f"SELECT COUNT(*) as total_count FROM {quoted_table} {where_clause}".strip()
-            count_result = execute_sql_safe(
-                query=count_query,
-                params=where_params,
-                limit=1
-            )
-            total_count = count_result[0]['total_count'] if count_result and len(count_result) > 0 else 0
-            print(f"[DEBUG] 전체 개수: {total_count}개")
+            # ★ Window Function을 사용하여 COUNT와 SELECT를 한 번에 처리
+            # 별도의 COUNT 쿼리 제거 - 성능 최적화
             
             # 전체 검색 결과에 대한 지역별 통계 계산 (LIMIT 없이)
             region_stats_result = []
@@ -320,16 +313,45 @@ class SQLBuilder:
                 import traceback
                 traceback.print_exc()
             
-            # 실제 데이터 조회 (limit 적용)
+            # ★ Window Function을 사용하여 COUNT와 SELECT를 한 번에 처리
+            # 실제 데이터 조회 (limit 적용) - Window Function으로 total_count 포함
             # 통계 정확도를 위해 DEFAULT_LIMIT = 1000 설정
             # SQL 필터링은 매우 빠르므로 1000개도 성능에 거의 영향 없음
             DEFAULT_LIMIT = 1000
             effective_limit = limit if limit is not None else DEFAULT_LIMIT
+            
+            # Window Function을 사용한 최적화된 쿼리
+            # COUNT(*) OVER()를 사용하여 별도의 COUNT 쿼리 없이 한 번에 처리
+            optimized_query = f"""
+                SELECT 
+                    respondent_id,
+                    gender,
+                    birth_year,
+                    region,
+                    district,
+                    COALESCE(interests, ARRAY[]::text[]) as interests,
+                    COUNT(*) OVER() as total_count
+                FROM {quoted_table}
+                {where_clause}
+                LIMIT %(limit)s
+            """.strip()
+            
+            where_params['limit'] = effective_limit
+            
             results = execute_sql_safe(
-                query=query,
-                params=params,
+                query=optimized_query,
+                params=where_params,
                 limit=effective_limit
             )
+            
+            # total_count 추출 (첫 번째 행에서)
+            total_count = 0
+            if results and len(results) > 0:
+                total_count = results[0].get('total_count', 0)
+                # total_count 필드 제거 (메타데이터이므로)
+                for result in results:
+                    if 'total_count' in result:
+                        del result['total_count']
             
             # 프론트엔드 호환성을 위해 응답 형식 변환
             # birth_year → age_text 변환
@@ -350,7 +372,7 @@ class SQLBuilder:
                 # 연령대별 통계를 메타데이터로 추가
                 result['_age_stats'] = age_stats_result
             
-            print(f"[DEBUG] SQL 실행 결과: {len(results)}개 (전체: {total_count}개)")
+            print(f"[DEBUG] SQL 실행 결과: {len(results)}개 (전체: {total_count}개) - Window Function 사용")
             return results
         except Exception as e:
             print(f"[ERROR] 필터 쿼리 실행 실패: {e}")

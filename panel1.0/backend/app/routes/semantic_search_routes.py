@@ -4,6 +4,10 @@
 """
 from flask import Blueprint, request, jsonify
 from app.services.search.service import SearchService
+from app.services.semantic.features import extract_panel_features, PanelFeatures
+from app.services.semantic.match_reason import generate_match_reasons
+from app.services.semantic.common_insights import generate_common_features
+from app.services.semantic.semantic_keywords import generate_semantic_keywords
 from typing import Dict, Any, List
 
 bp = Blueprint('semantic_search', __name__, url_prefix='/api/semantic-search')
@@ -80,7 +84,8 @@ def transform_panels(panels: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             'score': score,
             'distance': distance,
             'tags': [],  # 추후 태그 추출 로직 추가 가능
-            'content': panel.get('json_doc', '') or panel.get('content', '')
+            'content': panel.get('json_doc', '') or panel.get('content', ''),
+            # panel_features / match_reasons는 아래 semantic_search 함수에서 채움
         })
     
     return transformed
@@ -153,11 +158,74 @@ def semantic_search():
         transformed_panels = transform_panels(panels)
         stats = calculate_stats(panels)
         
-        # 키워드 추출
-        parsed_query = result.get('parsed_query', {})
-        keywords = parsed_query.get('semantic_keywords', [])
-        if not keywords:
-            keywords = [query]  # 키워드가 없으면 전체 질의 사용
+        # panel_features / match_reasons 생성 (상위 N명 중심)
+        top_n = min(50, len(transformed_panels))
+        top_panels_slice = transformed_panels[:top_n]
+
+        panel_features_list: List[PanelFeatures] = []
+        for idx, p in enumerate(top_panels_slice):
+            raw_panel = panels[idx] if idx < len(panels) else {}
+            features = extract_panel_features(raw_panel)
+            panel_features_list.append(features)
+
+        # 공통 특징 생성
+        common_features = generate_common_features(panel_features_list) if panel_features_list else []
+
+        # ★ 임베딩 결과 기반 핵심 키워드 추출 (TF-IDF keyword_affinity 집계)
+        embedding_based_keywords = []
+        if panel_features_list:
+            # 모든 패널의 keyword_affinity 집계
+            all_keyword_scores: Dict[str, float] = {}
+            for pf in panel_features_list:
+                features_dict = pf.to_dict()
+                keyword_affinity = features_dict.get("keyword_affinity", {})
+                for kw, score in keyword_affinity.items():
+                    if kw not in all_keyword_scores:
+                        all_keyword_scores[kw] = 0.0
+                    all_keyword_scores[kw] += score
+            
+            # 상위 키워드 추출 (점수 기준 정렬, 상위 10개)
+            sorted_keywords = sorted(
+                all_keyword_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+            embedding_based_keywords = [kw for kw, score in sorted_keywords if score > 0]
+            print(f"[INFO] 임베딩 기반 핵심 키워드 추출: {len(embedding_based_keywords)}개")
+            print(f"[DEBUG] 상위 키워드: {embedding_based_keywords}")
+
+        # 의미 키워드 확장 (LLM 생성 - 기존 호환성 유지)
+        top_feats_for_keywords = [pf.to_dict() for pf in panel_features_list[:10]]
+
+        parsed_query = result.get('parsed_query', {}) or {}
+        base_keywords = parsed_query.get('semantic_keywords') or []
+        if not base_keywords:
+            base_keywords = [query]
+
+        expanded_keywords = generate_semantic_keywords(
+            query=query,
+            common_features=common_features,
+            top_panel_features=top_feats_for_keywords
+        )
+
+        matching_keywords = list(dict.fromkeys(base_keywords + expanded_keywords))
+
+        # 개별 패널 match_reasons 채우기 (상위 N명만)
+        for idx, panel in enumerate(top_panels_slice):
+            raw_panel = panels[idx] if idx < len(panels) else {}
+            features = panel_features_list[idx]
+            text_for_reason = str(raw_panel.get('json_doc') or raw_panel.get('content') or '')
+            reasons = generate_match_reasons(
+                query=query,
+                panel_features=features,
+                panel_text=text_for_reason,
+                score=panel.get('score', 0)
+            )
+            panel['panel_features'] = features.to_dict()
+            panel['match_reasons'] = reasons
+
+        # 키워드 (기존 필드와 호환)
+        keywords = matching_keywords or base_keywords
         
         # AI 요약 생성 (간단한 통계 기반)
         summary_parts = []
@@ -190,13 +258,19 @@ def semantic_search():
                 summary_parts.append(f'평균 Match Score는 {stats["avg"]}%로 높은 수준입니다.')
         
         summary = ' '.join(summary_parts) if summary_parts else '의미 기반 검색 결과입니다.'
-        
+
+        # 고급 의미 검색용 확장 응답 (기존 필드는 그대로 유지)
         response = {
             'query': query,
             'keywords': keywords,
             'summary': summary,
             'stats': stats,
-            'panels': transformed_panels
+            'panels': transformed_panels,
+            # 신규 필드
+            'matching_keywords': matching_keywords,
+            'embedding_based_keywords': embedding_based_keywords,  # ★ 임베딩 결과 기반 키워드
+            'common_features': common_features,
+            'summary_sentence': summary,
         }
         
         return jsonify(response), 200
