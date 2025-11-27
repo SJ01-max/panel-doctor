@@ -252,6 +252,33 @@ class SQLBuilder:
             # ★ Window Function을 사용하여 COUNT와 SELECT를 한 번에 처리
             # 별도의 COUNT 쿼리 제거 - 성능 최적화
             
+            # 전체 검색 결과에 대한 성별 통계 계산 (LIMIT 없이)
+            gender_stats_result = []
+            try:
+                gender_where = "WHERE gender IS NOT NULL"
+                if where_clause:
+                    gender_where = f"{where_clause} AND gender IS NOT NULL"
+                gender_stats_query = f"""
+                    SELECT 
+                        gender,
+                        COUNT(*) as gender_count
+                    FROM {quoted_table}
+                    {gender_where}
+                    GROUP BY gender
+                    ORDER BY gender_count DESC
+                """.strip()
+                
+                gender_stats_result = execute_sql_safe(
+                    query=gender_stats_query,
+                    params=where_params,
+                    limit=10
+                )
+                print(f"[DEBUG] 성별 통계: {len(gender_stats_result)}개 성별")
+            except Exception as e:
+                print(f"[WARN] 성별 통계 계산 실패: {e}")
+                import traceback
+                traceback.print_exc()
+            
             # 전체 검색 결과에 대한 지역별 통계 계산 (LIMIT 없이)
             region_stats_result = []
             try:
@@ -367,6 +394,8 @@ class SQLBuilder:
                     result['doc_id'] = result['respondent_id']
                 # 전체 개수를 메타데이터로 추가
                 result['_total_count'] = total_count
+                # 성별 통계를 메타데이터로 추가
+                result['_gender_stats'] = gender_stats_result
                 # 지역별 통계를 메타데이터로 추가
                 result['_region_stats'] = region_stats_result
                 # 연령대별 통계를 메타데이터로 추가
@@ -379,4 +408,112 @@ class SQLBuilder:
             import traceback
             traceback.print_exc()
             return []
+    
+    @staticmethod
+    def get_total_dataset_stats() -> Dict[str, Any]:
+        """
+        전체 데이터셋의 통계를 계산 (기준 집단 통계)
+        
+        Returns:
+            {
+                "total_count": 전체 패널 수,
+                "gender_stats": [{"gender": "M", "count": 1000}, ...],
+                "age_stats": [{"age_group": "20s", "count": 500}, ...],
+                "region_stats": [{"region": "서울", "count": 300}, ...]
+            }
+        """
+        print("[DEBUG] get_total_dataset_stats() 호출 시작")
+        try:
+            quoted_table = '"core_v2"."respondent"'
+            
+            # 전체 개수
+            total_count_query = f"""
+                SELECT COUNT(*) as total_count
+                FROM {quoted_table}
+            """.strip()
+            
+            total_result = execute_sql_safe(query=total_count_query, params={}, limit=1)
+            total_count = total_result[0].get('total_count', 0) if total_result else 0
+            print(f"[DEBUG] 전체 데이터셋 개수: {total_count}")
+            
+            # 성별 통계
+            gender_stats_query = f"""
+                SELECT 
+                    gender,
+                    COUNT(*) as count
+                FROM {quoted_table}
+                WHERE gender IS NOT NULL
+                GROUP BY gender
+                ORDER BY count DESC
+            """.strip()
+            
+            gender_stats_result = execute_sql_safe(query=gender_stats_query, params={}, limit=10)
+            gender_stats = [
+                {"gender": row.get("gender", ""), "count": row.get("count", 0)}
+                for row in gender_stats_result
+            ]
+            
+            # 연령대 통계
+            age_stats_query = f"""
+                SELECT 
+                    CASE 
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 10 AND 19 THEN '10대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 20 AND 29 THEN '20대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 30 AND 39 THEN '30대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 40 AND 49 THEN '40대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 50 AND 59 THEN '50대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 60 AND 69 THEN '60대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) BETWEEN 70 AND 79 THEN '70대'
+                        WHEN (EXTRACT(YEAR FROM CURRENT_DATE) - birth_year) >= 80 THEN '80대'
+                        ELSE '기타'
+                    END as age_group,
+                    COUNT(*) as count
+                FROM {quoted_table}
+                WHERE birth_year IS NOT NULL
+                GROUP BY age_group
+                ORDER BY count DESC
+            """.strip()
+            
+            age_stats_result = execute_sql_safe(query=age_stats_query, params={}, limit=10)
+            age_stats = [
+                {"age_group": row.get("age_group", ""), "count": row.get("count", 0)}
+                for row in age_stats_result
+            ]
+            
+            # 지역 통계 (첫 단어 기준)
+            region_stats_query = f"""
+                SELECT 
+                    SPLIT_PART(region, ' ', 1) as main_region,
+                    COUNT(*) as count
+                FROM {quoted_table}
+                WHERE region IS NOT NULL
+                GROUP BY main_region
+                ORDER BY count DESC
+                LIMIT 10
+            """.strip()
+            
+            region_stats_result = execute_sql_safe(query=region_stats_query, params={}, limit=10)
+            region_stats = [
+                {"region": row.get("main_region", ""), "count": row.get("count", 0)}
+                for row in region_stats_result
+            ]
+            
+            result = {
+                "total_count": total_count,
+                "gender_stats": gender_stats,
+                "age_stats": age_stats,
+                "region_stats": region_stats
+            }
+            print(f"[DEBUG] get_total_dataset_stats() 완료: total_count={total_count}, gender={len(gender_stats)}, age={len(age_stats)}, region={len(region_stats)}")
+            return result
+        except Exception as e:
+            print(f"[WARN] 전체 데이터셋 통계 계산 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "total_count": 0,
+                "gender_stats": [],
+                "age_stats": [],
+                "region_stats": []
+            }
 

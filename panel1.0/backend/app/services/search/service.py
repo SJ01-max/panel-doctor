@@ -3,7 +3,9 @@
 - 자동 전략 선택
 - Fallback 로직 포함
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from collections import Counter
+import re
 from app.services.llm.parser import LlmStructuredParser
 from app.services.search.strategy.selector import StrategySelector
 from app.services.search.strategy.filter_first import FilterFirstSearch
@@ -96,6 +98,25 @@ class SearchService:
                 result
             )
         
+        # -----------------------
+        # Server-side Aggregation: gender / age / region 통계 계산
+        # -----------------------
+        try:
+            results_list: List[Dict[str, Any]] = result.get("results", []) or []
+            if results_list:
+                gender_stats, age_stats, region_stats = self._compute_basic_stats(results_list)
+                
+                # FilterFirstSearch에서 이미 내려준 통계가 있으면 그대로 사용하고,
+                # 없을 때만 채워 넣는다.
+                if "gender_stats" not in result or not result.get("gender_stats"):
+                    result["gender_stats"] = gender_stats
+                if "age_stats" not in result or not result.get("age_stats"):
+                    result["age_stats"] = age_stats
+                if "region_stats" not in result or not result.get("region_stats"):
+                    result["region_stats"] = region_stats
+        except Exception as e:
+            print(f"[WARN] server-side 통계 계산 중 오류 (무시): {e}")
+        
         # 결과에 메타데이터 추가
         result["parsed_query"] = parsed
         result["selected_strategy"] = strategy
@@ -111,7 +132,6 @@ class SearchService:
                 from app.services.semantic.match_reason import generate_match_reasons
                 from app.services.semantic.common_insights import generate_common_features
                 from app.services.semantic.semantic_keywords import generate_semantic_keywords
-                from app.services.semantic.extract_entities import extract_car_entities
                 
                 results = result.get("results", [])
                 top_panels = results[:20]  # 상위 20개만 처리 (성능 최적화)
@@ -182,58 +202,12 @@ class SearchService:
                     except Exception as e:
                         print(f"[WARN] matching_keywords LLM 확장 실패 (무시): {e}")
                 
-                # 4. Brand/Car Type Top N 계산 (차량 관련 질의일 때만)
-                brand_top = {}
-                car_type_top = {}
-                all_brand_affinity = {}  # 전체 패널의 브랜드 affinity 집계용
-                all_car_type_affinity = {}  # 전체 패널의 차량 타입 affinity 집계용
-                
-                # 질의가 차량/자동차 관련인지 확인
-                car_related_keywords = ['차', '자동차', '차량', '브랜드', '모델', '운전', '드라이브', '차고', '소유차', '보유차']
-                query_lower = user_query.lower()
-                semantic_keywords_lower = [kw.lower() for kw in semantic_keywords] if semantic_keywords else []
-                all_query_text = ' '.join([query_lower] + semantic_keywords_lower)
-                
-                is_car_related = any(keyword in all_query_text for keyword in car_related_keywords)
-                
-                if is_car_related:
-                    try:
-                        # 전체 패널 텍스트로 한 번만 계산
-                        if all_panel_texts and len(all_panel_texts) > 0:
-                            car_entities = extract_car_entities(all_panel_texts)
-                            brand_affinity_all = car_entities.get("brand_affinity", {})
-                            car_type_affinity_all = car_entities.get("car_type_affinity", {})
-                            
-                            print(f"[DEBUG] Brand affinity 전체: {len(brand_affinity_all)}개, Car type affinity 전체: {len(car_type_affinity_all)}개")
-                            
-                            # 상위 5개만 추출 (Top N)
-                            brand_top = dict(sorted(brand_affinity_all.items(), key=lambda x: x[1], reverse=True)[:5])
-                            car_type_top = dict(sorted(car_type_affinity_all.items(), key=lambda x: x[1], reverse=True)[:5])
-                            
-                            # 각 패널의 brand_affinity, car_type_affinity를 전체 결과에서 추출
-                            all_brand_affinity = brand_affinity_all
-                            all_car_type_affinity = car_type_affinity_all
-                            
-                            print(f"[INFO] Brand/Car Type Top N 계산 완료 - brand_top: {len(brand_top)}개, car_type_top: {len(car_type_top)}개")
-                            if brand_top:
-                                print(f"[DEBUG] brand_top 샘플: {list(brand_top.items())[:3]}")
-                            if car_type_top:
-                                print(f"[DEBUG] car_type_top 샘플: {list(car_type_top.items())[:3]}")
-                        else:
-                            print(f"[WARN] all_panel_texts가 비어있음 - Brand/Car Type 계산 스킵")
-                    except Exception as e:
-                        import traceback
-                        print(f"[WARN] Brand/Car Type 추출 실패 (무시): {e}")
-                        print(f"[WARN] 상세:\n{traceback.format_exc()}")
-                else:
-                    print(f"[INFO] 질의가 차량 관련이 아니므로 Brand/Car Type 분석 스킵: {user_query}")
-                
-                # 5. summary_sentence 생성
+                # 4. summary_sentence 생성
                 summary_sentence = f"이 검색은 {len(results)}명의 패널이 발견되었으며, 평균 유사도 점수가 높게 나타났습니다."
                 if common_features and len(common_features) > 0:
                     summary_sentence = f"이 검색은 {common_features[0]} 등의 공통 성향을 가진 {len(results)}명의 패널이 발견되었습니다."
                 
-                # 6. 각 패널에 match_reasons 추가 및 brand_affinity, car_type_affinity 매핑 (상위 10개만 - 성능 최적화)
+                # 5. 각 패널에 match_reasons 추가 (상위 10개만 - 성능 최적화)
                 for idx, panel_row in enumerate(top_panels[:10]):
                     try:
                         panel_features = panel_features_list[idx] if idx < len(panel_features_list) else None
@@ -249,29 +223,6 @@ class SearchService:
                                 score=score
                             )
                             panel_row["match_reasons"] = match_reasons
-                            
-                            # panel_features에 전체 계산된 brand_affinity, car_type_affinity 매핑
-                            panel_features_dict = panel_features.to_dict()
-                            # 전체 결과에서 현재 패널 텍스트에 포함된 브랜드/차량 타입만 추출
-                            panel_text_lower = panel_text.lower() if panel_text else ""
-                            panel_brand_affinity = {}
-                            panel_car_type_affinity = {}
-                            
-                            for brand, brand_score in all_brand_affinity.items():
-                                if brand.lower() in panel_text_lower:
-                                    panel_brand_affinity[brand] = brand_score
-                            
-                            for car_type, car_score in all_car_type_affinity.items():
-                                car_type_lower = car_type.lower()
-                                if car_type_lower in panel_text_lower or any(ct in panel_text_lower for ct in car_type_lower.split()):
-                                    panel_car_type_affinity[car_type] = car_score
-                            
-                            panel_features_dict["brand_affinity"] = panel_brand_affinity
-                            panel_features_dict["car_type_affinity"] = panel_car_type_affinity
-                            
-                            panel_row["panel_features"] = panel_features_dict
-                            panel_row["brand_affinity"] = panel_brand_affinity
-                            panel_row["car_type_affinity"] = panel_car_type_affinity
                     except Exception as e:
                         print(f"[WARN] 패널 {idx} match_reasons 생성 실패 (무시): {e}")
                         continue
@@ -280,8 +231,6 @@ class SearchService:
                 result["matching_keywords"] = matching_keywords
                 result["common_features"] = common_features
                 result["summary_sentence"] = summary_sentence
-                result["brand_top"] = brand_top
-                result["car_type_top"] = car_type_top
                 
                 print(f"[INFO] {strategy} 전략 확장 필드 생성 완료")
             except Exception as e:
@@ -293,9 +242,83 @@ class SearchService:
         print(f"[DEBUG] ========== 최종 결과 ==========")
         print(f"  전략: {strategy}")
         print(f"  결과 개수: {result.get('count', 0)}")
+        if 'total_dataset_stats' in result:
+            print(f"  total_dataset_stats 포함됨: total_count={result['total_dataset_stats'].get('total_count', 0)}")
+        else:
+            print(f"  total_dataset_stats 없음")
         print(f"  ====================================")
         
         return result
+    
+    def _compute_basic_stats(self, results: List[Dict[str, Any]]):
+        """
+        검색 결과 행 리스트에서 성별 / 연령대 / 지역 분포를 계산한다.
+        - 성별: 남성 / 여성 / 기타
+        - 연령대: 10s / 20s / ... (FilterFirstSearch의 age_stats 형식과 맞춤)
+        - 지역: region의 첫 단어 기준 (예: '서울 강남구' -> '서울')
+        """
+        gender_counter: Counter = Counter()
+        age_counter: Counter = Counter()
+        region_counter: Counter = Counter()
+
+        for row in results:
+            # ----- 성별 -----
+            gender_raw = (row.get("gender") or "").strip()
+            if gender_raw:
+                if gender_raw in ["M", "남", "남성", "남자"]:
+                    gender_key = "M"
+                elif gender_raw in ["F", "여", "여성", "여자"]:
+                    gender_key = "F"
+                else:
+                    gender_key = "기타"
+                gender_counter[gender_key] += 1
+
+            # ----- 연령대 -----
+            age_val = row.get("age")
+            age_text = row.get("age_text") or ""
+            age_num = None
+
+            if isinstance(age_val, (int, float)) and age_val > 0:
+                age_num = int(age_val)
+            else:
+                m = re.search(r"(\d+)\s*세", str(age_text))
+                if m:
+                    try:
+                        age_num = int(m.group(1))
+                    except ValueError:
+                        age_num = None
+
+            if age_num is not None and 10 <= age_num < 100:
+                decade = (age_num // 10) * 10
+                age_group = f"{decade}s"  # 20s, 30s ...
+                age_counter[age_group] += 1
+
+            # ----- 지역 -----
+            region_raw = (row.get("region") or "").strip()
+            if region_raw:
+                main_region = region_raw.split()[0]
+                region_counter[main_region] += 1
+
+        gender_stats = [
+            {"gender": gender, "gender_count": count}
+            for gender, count in gender_counter.items()
+        ]
+        age_stats = [
+            {"age_group": group, "age_count": count}
+            for group, count in age_counter.items()
+        ]
+        region_stats = [
+            {"region": region, "region_count": count}
+            for region, count in region_counter.items()
+        ]
+
+        # 일관된 순서를 위해 간단 정렬
+        gender_order = {"M": 0, "F": 1}
+        gender_stats.sort(key=lambda x: gender_order.get(x["gender"], 99))
+        age_stats.sort(key=lambda x: x["age_group"])
+        region_stats.sort(key=lambda x: x["region"])
+
+        return gender_stats, age_stats, region_stats
     
     def _execute_search(
         self,

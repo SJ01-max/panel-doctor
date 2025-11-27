@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { unifiedSearch, type UnifiedSearchResponse } from '../../../api/search';
 import { sqlSearch, type LlmSqlResponse } from '../../../api/llm';
+import { extractTrendingKeywords } from '../../../utils/keywordExtractor';
 
 const EXAMPLE_QUERIES = [
   "서울 20대 남자 100명",
@@ -218,8 +219,21 @@ export const usePanelSearch = () => {
         setAllResults(results);
         setSearchResult({
           unified: unifiedResult,
-          llm: undefined // 기존 페르소나 데이터 초기화
+          llm: undefined // 기존 LLM 데이터 초기화
         });
+
+        // 🔎 데이터 기반 Trending Keywords 계산 (Top 1000 패널 기준)
+        try {
+          const keywordData = extractTrendingKeywords(results);
+          setWidgets(prev => [
+            // 기존 keyword 위젯 제거
+            ...prev.filter(w => w?.type !== 'keyword'),
+            // 새로운 keyword 위젯 추가
+            { type: 'keyword', data: keywordData },
+          ]);
+        } catch (e) {
+          console.warn('[검색] 키워드 추출 중 오류 (무시):', e);
+        }
         
         // 1. 분석 상태 먼저 켜기 (방어막 구축)
         setIsAnalyzing(true);
@@ -309,18 +323,25 @@ export const usePanelSearch = () => {
       console.log('[🤖 AI] sqlSearch API 호출 시작...');
       const llmResponse = await sqlSearch(query, undefined, undefined, panelSearchResult);
       console.log('[🤖 AI] sqlSearch 응답 받음:', {
-        hasPersona: !!llmResponse?.persona,
         hasWidgets: !!llmResponse?.widgets,
         widgetsCount: llmResponse?.widgets?.length || 0
       });
       
-      const llmWidgets = llmResponse?.widgets || [];
+      const llmWidgets = (llmResponse?.widgets || []) as any[];
 
-      // LLM 결과 업데이트 (persona, widgets 포함)
+      // LLM 결과 업데이트 (widgets 포함)
       // ★ 중요: 기존 unifiedResult를 절대 잃어버리지 않도록 강제 보존
       console.log('[🤖 AI] searchResult 상태 업데이트 시작');
       
-      setWidgets(llmWidgets);
+      // LLM 위젯은 기존 keyword 위젯은 유지하고, 나머지 타입만 덮어쓴다
+      setWidgets(prev => {
+        const keywordWidget = prev.find(w => w?.type === 'keyword');
+        const nonKeywordLlms = llmWidgets.filter(w => w?.type !== 'keyword');
+        return [
+          ...(keywordWidget ? [keywordWidget] : []),
+          ...nonKeywordLlms,
+        ];
+      });
       setSearchResult(prev => {
         // 디버깅: 현재 상태 체크
         console.log('[🤖 AI] 상태 업데이트 전 체크:', {
@@ -359,12 +380,6 @@ export const usePanelSearch = () => {
         };
       });
       
-      // 디버깅: persona 데이터 확인
-      if (llmResponse?.persona) {
-        console.log('[🤖 AI] ✅ Persona 데이터 생성 완료:', llmResponse.persona);
-      } else {
-        console.warn('[🤖 AI] ⚠️ Persona 데이터가 없습니다. LLM 응답:', llmResponse);
-      }
       console.log('[🤖 AI] ✅ loadInsightAsync 완료');
     } catch (err) {
       console.error('[🤖 AI] ❌ LLM 요약 가져오기 실패:', err);
@@ -397,7 +412,84 @@ export const usePanelSearch = () => {
   };
 
   const handleRemoveFilter = (index: number) => {
-    setActiveFilters(prev => prev.filter((_, i) => i !== index));
+    const filterToRemove = activeFilters[index];
+    if (!filterToRemove) return;
+    
+    // 필터 타입과 값에 따라 검색 쿼리에서 해당 키워드 제거
+    let updatedQuery = query;
+    
+    if (filterToRemove.type === 'age' || filterToRemove.label.includes('연령')) {
+      // 연령 필터 제거: "30s" → "30대" 또는 "30" 제거
+      const ageValue = filterToRemove.value;
+      let ageKeyword = '';
+      
+      if (ageValue.includes('s')) {
+        // "30s" → "30대" 변환
+        const decade = ageValue.replace('s', '');
+        ageKeyword = `${decade}대`;
+      } else if (ageValue.includes('대')) {
+        ageKeyword = ageValue;
+      } else {
+        // 숫자만 있는 경우
+        const decade = parseInt(ageValue);
+        if (!isNaN(decade)) {
+          ageKeyword = `${decade}대`;
+        }
+      }
+      
+      // 검색 쿼리에서 해당 연령대 키워드 제거
+      if (ageKeyword) {
+        updatedQuery = updatedQuery
+          .replace(new RegExp(ageKeyword, 'gi'), '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    } else if (filterToRemove.type === 'region' || filterToRemove.label.includes('지역')) {
+      // 지역 필터 제거: "서울" 제거
+      const regionValue = filterToRemove.value;
+      // 지역명 추출 (첫 번째 단어만, 예: "서울 강남구" → "서울")
+      const regionName = regionValue.trim().split(/\s+/)[0];
+      
+      if (regionName) {
+        // "서울 거주" 또는 "서울" 패턴 제거
+        updatedQuery = updatedQuery
+          .replace(new RegExp(`${regionName}\\s*거주?`, 'gi'), '')
+          .replace(new RegExp(regionName, 'gi'), '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    } else if (filterToRemove.type === 'gender' || filterToRemove.label.includes('성별')) {
+      // 성별 필터 제거: "남" 또는 "여" 제거
+      const genderValue = filterToRemove.value;
+      const genderKeywords = ['남', '여', '남자', '여자', '남성', '여성', 'M', 'F'];
+      
+      for (const keyword of genderKeywords) {
+        if (genderValue.includes(keyword) || keyword.includes(genderValue)) {
+          updatedQuery = updatedQuery
+            .replace(new RegExp(keyword, 'gi'), '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          break;
+        }
+      }
+    }
+    
+    // 필터 목록에서 제거
+    const newFilters = activeFilters.filter((_, i) => i !== index);
+    setActiveFilters(newFilters);
+    
+    // 검색 쿼리 업데이트
+    setQuery(updatedQuery);
+    
+    // 쿼리가 비어있지 않으면 자동으로 재검색
+    if (updatedQuery.trim()) {
+      handleSearch(updatedQuery);
+    } else {
+      // 쿼리가 비어있으면 검색 결과 초기화
+      setSearchResult(null);
+      setAllResults([]);
+      setHasSearched(false);
+    }
   };
 
   // 전체 결과 데이터 (통계 계산용) - state에서 가져오거나 fallback

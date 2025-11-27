@@ -229,13 +229,12 @@ class LlmService(Singleton):
             )
             text = "\n".join(getattr(c, "text", "") for c in direct_response.content if getattr(c, "type", None) == "text")
             
-            # Parse response for persona, data tags and widgets
+            # Parse response for widgets
             parsed_response = self._parse_storytelling_response(text)
             
             return {
                 "answer": parsed_response["answer"],
                 "widgets": parsed_response["widgets"],
-                "persona": parsed_response.get("persona"),
                 "tool_called": False
             }
 
@@ -305,30 +304,28 @@ class LlmService(Singleton):
 
         final_text = "\n".join(getattr(c, "text", "") for c in followup.content if getattr(c, "type", None) == "text")
         
-        # Parse response for data tags and widgets
+        # Parse response for widgets
         parsed_response = self._parse_storytelling_response(final_text)
         
         return {
             "answer": parsed_response["answer"],
             "widgets": parsed_response["widgets"],
-            "persona": parsed_response.get("persona"),
             "tool_called": True,
             **tool_result_payload
         }
 
     def _parse_storytelling_response(self, text: str) -> Dict[str, Any]:
-        """Parse LLM response to extract persona, data tags and widgets"""
+        """Parse LLM response to extract widgets"""
         import re
         import json
         
         widgets = []
-        persona = None
         answer = text
         
         if not text:
-            return {"answer": "", "widgets": [], "persona": None}
+            return {"answer": "", "widgets": []}
         
-        # Extract JSON from the end of the response (persona + widgets)
+        # Extract JSON from the end of the response (widgets)
         # Try multiple patterns
         json_match = None
         
@@ -340,17 +337,13 @@ class LlmService(Singleton):
             json_match = re.search(r'```\s*(\{[\s\S]*?\})\s*```', text, re.DOTALL)
         
         if not json_match:
-            # Pattern 3: Standalone JSON object (persona or widgets)
-            json_match = re.search(r'(\{\s*"(?:persona|widgets)"[\s\S]*?\})', text, re.DOTALL)
+            # Pattern 3: Standalone JSON object (widgets)
+            json_match = re.search(r'(\{\s*"widgets"[\s\S]*?\})', text, re.DOTALL)
         
         if json_match:
             try:
                 json_str = json_match.group(1)
                 parsed_json = json.loads(json_str)
-                
-                # Extract persona if present
-                if "persona" in parsed_json:
-                    persona = parsed_json.get("persona")
                 
                 # Extract widgets if present
                 if "widgets" in parsed_json:
@@ -364,8 +357,7 @@ class LlmService(Singleton):
         
         return {
             "answer": answer,
-            "widgets": widgets,
-            "persona": persona
+            "widgets": widgets
         }
     
     def list_models(self) -> Dict[str, Any]:

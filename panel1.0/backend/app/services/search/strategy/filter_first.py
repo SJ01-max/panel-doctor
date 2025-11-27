@@ -45,11 +45,14 @@ class FilterFirstSearch(SearchStrategy):
         
         # 전체 개수 및 통계 추출 (결과에서 메타데이터로 전달된 경우)
         total_count = len(results)
+        gender_stats = []
         region_stats = []
         age_stats = []
         if results and len(results) > 0:
             if '_total_count' in results[0]:
                 total_count = results[0]['_total_count']
+            if '_gender_stats' in results[0]:
+                gender_stats = results[0]['_gender_stats']
             if '_region_stats' in results[0]:
                 region_stats = results[0]['_region_stats']
             if '_age_stats' in results[0]:
@@ -58,10 +61,16 @@ class FilterFirstSearch(SearchStrategy):
             for result in results:
                 if '_total_count' in result:
                     del result['_total_count']
+                if '_gender_stats' in result:
+                    del result['_gender_stats']
                 if '_region_stats' in result:
                     del result['_region_stats']
                 if '_age_stats' in result:
                     del result['_age_stats']
+        
+        # 전체 데이터셋 통계 계산 (기준 집단)
+        total_dataset_stats = self.sql_builder.get_total_dataset_stats()
+        print(f"[DEBUG] 전체 데이터셋 통계 계산 완료: total_count={total_dataset_stats.get('total_count', 0)}")
         
         result_dict = {
             "results": results,
@@ -70,8 +79,10 @@ class FilterFirstSearch(SearchStrategy):
             "strategy": "filter_first",
             "filters_applied": filters,
             "has_results": len(results) > 0,
+            "gender_stats": gender_stats,  # 성별 통계 추가
             "region_stats": region_stats,  # 지역별 통계 추가
-            "age_stats": age_stats  # 연령대별 통계 추가
+            "age_stats": age_stats,  # 연령대별 통계 추가
+            "total_dataset_stats": total_dataset_stats  # 전체 데이터셋 통계 (기준 집단)
         }
         
         print(f"[DEBUG] FilterFirstSearch 결과: count={result_dict['count']} (반환된 결과: {len(results)}개), has_results={result_dict['has_results']}")

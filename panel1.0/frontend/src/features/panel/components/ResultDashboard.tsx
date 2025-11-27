@@ -4,9 +4,9 @@ import { Download } from 'lucide-react';
 import { KPIStatCard } from './KPIStatCard';
 import { BarChartCard } from './BarChartCard';
 import { DonutChartCard } from './DonutChartCard';
-import { PersonaCard } from './PersonaCard';
-import { PanelListCard, type PanelItem } from './PanelListCard';
+import type { PanelItem } from '../types/PanelItem';
 import { SemanticResultList } from './SemanticResultList';
+import { ComparisonDonutChart } from './ComparisonDonutChart';
 import { ModernTable } from '../../../components/ModernTable';
 import type { UnifiedSearchResponse } from '../../../api/search';
 import type { LlmSqlResponse } from '../../../api/llm';
@@ -501,8 +501,93 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
               {/* 분포 영역 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {(() => {
-              // 전체 결과 데이터로 통계 계산
-              const { ageData } = extractChartData(currentAllResults);
+              // filter_first 전략일 때는 백엔드에서 계산한 전체 검색 결과 기반 통계 사용
+              let ageData: Array<{ name: string; value: number }> = [];
+              
+              if (isFilterFirst && searchResult.unified?.age_stats && searchResult.unified.age_stats.length > 0) {
+                const backendAgeStats = searchResult.unified.age_stats;
+                
+                // 연령대가 하나만 있으면 각 연령별로 세분화해서 표시
+                if (backendAgeStats.length === 1) {
+                  // 단일 연령대: 각 연령별로 계산 (30대 -> 30세, 31세, 32세, ...)
+                  const ageGroup = backendAgeStats[0].age_group || '';
+                  const ageGroupNum = parseInt(ageGroup.replace('대', '').replace('s', '')) || 0;
+                  
+                  if (ageGroupNum >= 10 && ageGroupNum < 100) {
+                    // 해당 연령대의 각 연령별 통계 계산
+                    const ageCounts: Record<string, number> = {};
+                    currentAllResults.forEach(row => {
+                      const ageText = row.age_text || row.age || '-';
+                      const ageMatch = ageText.match(/만\s*(\d+)세|(\d+)세/);
+                      if (ageMatch) {
+                        const age = parseInt(ageMatch[1] || ageMatch[2]) || 0;
+                        // 해당 연령대 범위 내에 있는지 확인 (예: 30대 = 30~39세)
+                        const ageDecade = Math.floor(age / 10) * 10;
+                        if (ageDecade === ageGroupNum && age >= ageGroupNum && age < ageGroupNum + 10) {
+                          const ageLabel = `${age}세`;
+                          ageCounts[ageLabel] = (ageCounts[ageLabel] || 0) + 1;
+                        }
+                      }
+                    });
+                    
+                    // 전체 검색 결과 수(totalCount)를 기준으로 비율 계산
+                    const totalInDecade = backendAgeStats[0].age_count || 0;
+                    const sampleTotal = Object.values(ageCounts).reduce((sum, count) => sum + count, 0);
+                    
+                    // 각 연령별 개수를 전체 검색 결과에 맞게 스케일링
+                    ageData = Object.entries(ageCounts)
+                      .map(([name, count]) => {
+                        const scaledCount = sampleTotal > 0 
+                          ? Math.round((count / sampleTotal) * totalInDecade)
+                          : 0;
+                        return {
+                          name,
+                          value: scaledCount,
+                          ageNum: parseInt(name.replace('세', '')) || 0
+                        };
+                      })
+                      .sort((a, b) => a.ageNum - b.ageNum)
+                      .map(({ name, value }) => ({ name, value }));
+                  } else {
+                    // 연령대가 정상 범위가 아니면 백엔드 통계 그대로 사용
+                    ageData = backendAgeStats.map((stat: any) => {
+                      const ageGroup = stat.age_group || '';
+                      const label = ageGroup.endsWith('s') 
+                        ? `${ageGroup.replace('s', '')}대` 
+                        : ageGroup.includes('대') 
+                        ? ageGroup 
+                        : `${ageGroup}대`;
+                      return {
+                        name: label,
+                        value: stat.age_count || 0
+                      };
+                    });
+                  }
+                } else {
+                  // 여러 연령대가 있으면 백엔드 통계 그대로 사용
+                  ageData = backendAgeStats.map((stat: any) => {
+                    const ageGroup = stat.age_group || '';
+                    const label = ageGroup.endsWith('s') 
+                      ? `${ageGroup.replace('s', '')}대` 
+                      : ageGroup.includes('대') 
+                      ? ageGroup 
+                      : `${ageGroup}대`;
+                    return {
+                      name: label,
+                      value: stat.age_count || 0
+                    };
+                  }).sort((a, b) => {
+                    const ageA = parseInt(a.name.replace('대', '')) || 0;
+                    const ageB = parseInt(b.name.replace('대', '')) || 0;
+                    return ageA - ageB;
+                  });
+                }
+              } else {
+                // 백엔드 통계가 없으면 프론트엔드에서 계산 (fallback)
+                const extracted = extractChartData(currentAllResults);
+                ageData = extracted.ageData;
+              }
+              
               return ageData.length > 0 ? (
                 <BarChartCard
                   title="연령대 분포"
@@ -513,39 +598,77 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
             })()}
 
             {(() => {
-              // 검색 결과로 반환된 실제 패널들 기준으로 지역 분포 계산
-              // 검색 결과 기준으로 지역별 개수 계산
-              const regionCounts: Record<string, number> = {};
-              currentAllResults.forEach(row => {
-                const region = row.region || '-';
-                const mainRegion = region.split(/\s+/)[0] || region;
-                regionCounts[mainRegion] = (regionCounts[mainRegion] || 0) + 1;
-              });
-              
-              // 지역별 개수를 배열로 변환하고 정렬
-              let regionData = Object.entries(regionCounts)
-                .map(([name, value]) => ({ name, value }))
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 5);
-              
               // 단일 지역 필터가 있는 경우: 해당 지역을 100%로 표시
-              if (requestedRegion && regionData.length > 0) {
-                const requestedRegions = requestedRegion.split(/[,\s]+|또는|이나|/).filter(r => r.trim().length > 0);
+              if (requestedRegion) {
+                // activeFilters에서 지역 필터 개수 확인 (더 정확함)
                 const regionFilters = activeFilters.filter(f => f.label.includes('지역'));
+                
+                // requestedRegion에서 실제 지역명 추출 (공백 제거 후 첫 번째 단어만)
+                const mainRequestedRegion = requestedRegion.trim().split(/\s+/)[0];
+                
+                // 여러 지역인지 확인: activeFilters에 지역 필터가 1개이고, requestedRegion에 구분자가 없으면 단일 지역
                 const hasMultipleRegions = regionFilters.length > 1 || 
-                  requestedRegions.length > 1 || 
                   requestedRegion.includes('또는') || 
                   requestedRegion.includes('이나') ||
-                  requestedRegion.includes(',');
+                  requestedRegion.includes(',') ||
+                  requestedRegion.includes('/');
                 
-                if (!hasMultipleRegions) {
-                  // 단일 지역 필터: 해당 지역을 totalCount로 표시
-                  const mainRequestedRegion = requestedRegions[0]?.split(/\s+/)[0] || requestedRegion.split(/\s+/)[0];
-                  regionData = [{
-                    name: mainRequestedRegion,
-                    value: totalCount // 전체 검색 결과 수 사용
-                  }];
+                console.log('[DEBUG] 지역 분포 계산:', {
+                  requestedRegion,
+                  mainRequestedRegion,
+                  regionFiltersCount: regionFilters.length,
+                  regionFilters: regionFilters.map(f => ({ label: f.label, value: f.value })),
+                  hasMultipleRegions,
+                  totalCount,
+                  currentAllResultsLength: currentAllResults.length
+                });
+                
+                // 단일 지역 필터인 경우: activeFilters에 지역 필터가 정확히 1개이고, 구분자가 없으면
+                if (regionFilters.length === 1 && !hasMultipleRegions) {
+                  // 단일 지역 필터: 해당 지역을 totalCount로 표시 (100%)
+                  console.log('[DEBUG] 단일 지역 필터 적용:', {
+                    mainRequestedRegion,
+                    value: totalCount
+                  });
+                  return (
+                    <DonutChartCard
+                      title="지역 분포"
+                      data={[{
+                        name: mainRequestedRegion,
+                        value: totalCount // 전체 검색 결과 수 사용
+                      }]}
+                      subtitle="패널 기준"
+                      totalCount={totalCount} // totalCount 사용 (전체 검색 결과 수)
+                    />
+                  );
                 }
+              }
+              
+              // 여러 지역 필터이거나 지역 필터가 없는 경우
+              let regionData: Array<{ name: string; value: number }> = [];
+              
+              if (isFilterFirst && searchResult.unified?.region_stats && searchResult.unified.region_stats.length > 0) {
+                // 백엔드 region_stats 사용 (전체 검색 결과 기반)
+                regionData = searchResult.unified.region_stats
+                  .map((stat: any) => ({
+                    name: stat.region || '',
+                    value: stat.region_count || 0
+                  }))
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 5);
+              } else {
+                // 백엔드 통계가 없으면 프론트엔드에서 계산 (fallback)
+                const regionCounts: Record<string, number> = {};
+                currentAllResults.forEach(row => {
+                  const region = row.region || '-';
+                  const mainRegion = region.split(/\s+/)[0] || region;
+                  regionCounts[mainRegion] = (regionCounts[mainRegion] || 0) + 1;
+                });
+                
+                regionData = Object.entries(regionCounts)
+                  .map(([name, value]) => ({ name, value }))
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 5);
               }
               
               return regionData.length > 0 ? (
@@ -561,120 +684,241 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
             </>
           )}
 
-          {/* AI 페르소나 & 패널 리스트 프리뷰 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* 페르소나 카드: 로딩 중이거나 데이터가 있으면 항상 표시 - 전략별 아이콘 적용 */}
-            {(isAnalyzing || searchResult.llm?.persona) && (
-              <div className="relative">
-                <PersonaCard
-                  persona={searchResult.llm?.persona}
-                  isLoading={isAnalyzing}
-                  hasSearched={hasSearched}
-                />
-                {/* 전략별 아이콘 오버레이 */}
-                <div className={`absolute top-4 right-4 w-10 h-10 rounded-full bg-gradient-to-r ${strategyConfig.personaColor} flex items-center justify-center text-white text-lg shadow-lg`}>
-                  {strategyConfig.personaIcon}
-                </div>
-              </div>
-            )}
-
-            {tableData && tableData.length > 0 && (
-              <PanelListCard
-                showMatchScore={!isFilterFirst}
-                strategy={strategy}
-                panels={tableData.map((row, i) => {
-                  // 요청한 필터 조건과 실제 패널 데이터를 비교하여 일치율 계산
-                  let matchScore: number = 100; // 기본값 100%
-                  
-                  // 요청한 필터 조건 추출
-                  const requestedFilters = parsedQuery?.filters || {};
-                  const requestedAge = requestedFilters.age;
-                  const requestedGender = requestedFilters.gender;
-                  const requestedRegion = requestedFilters.region;
-                  
-                  // 일치 조건 개수와 전체 조건 개수 계산
-                  let matchedConditions = 0;
-                  let totalConditions = 0;
-                  
-                  // 연령 조건 체크
-                  if (requestedAge) {
-                    totalConditions++;
-                    const panelAge = row.age || '';
-                    const ageMatch = panelAge.match(/만\s*(\d+)세|(\d+)세/);
-                    if (ageMatch) {
-                      const panelAgeNum = parseInt(ageMatch[1] || ageMatch[2]) || 0;
-                      // "50s" -> 50-59, "20s" -> 20-29 등으로 변환
-                      if (requestedAge.endsWith('s')) {
-                        const decade = parseInt(requestedAge.replace('s', '')) || 0;
-                        if (panelAgeNum >= decade && panelAgeNum < decade + 10) {
-                          matchedConditions++;
-                        }
-                      } else if (requestedAge.includes('대')) {
-                        const decade = parseInt(requestedAge.replace('대', '')) || 0;
-                        if (panelAgeNum >= decade && panelAgeNum < decade + 10) {
-                          matchedConditions++;
-                        }
-                      } else if (requestedAge.includes('이상') || requestedAge.includes('이상')) {
-                        const minAge = parseInt(requestedAge.replace(/[^0-9]/g, '')) || 0;
-                        if (panelAgeNum >= minAge) {
-                          matchedConditions++;
-                        }
-                      }
-                    }
+          {/* filter_first일 때만 전체 비율 대비 차트 표시 */}
+          {isFilterFirst && (() => {
+            const totalDatasetStats = searchResult.unified?.total_dataset_stats;
+            console.log('[DEBUG] filter_first 차트 렌더링 체크:', {
+              isFilterFirst,
+              hasTotalDatasetStats: !!totalDatasetStats,
+              totalDatasetStats,
+              unified: searchResult.unified,
+              unifiedKeys: searchResult.unified ? Object.keys(searchResult.unified) : []
+            });
+            if (!totalDatasetStats) {
+              console.log('[DEBUG] total_dataset_stats가 없어서 차트를 표시하지 않습니다.');
+              console.log('[DEBUG] unified 객체 전체:', JSON.stringify(searchResult.unified, null, 2));
+              return null;
+            }
+            
+            // 기준 집단 통계
+            const referenceTotal = totalDatasetStats.total_count || 0;
+            const referenceGenderStats = totalDatasetStats.gender_stats || [];
+            const referenceAgeStats = totalDatasetStats.age_stats || [];
+            const referenceRegionStats = totalDatasetStats.region_stats || [];
+            
+            // 지역 기준: 전체 데이터셋에서 해당 지역인 사람 수 vs 해당 지역이 아닌 사람 수
+            const getRegionComparison = () => {
+              if (referenceRegionStats.length === 0) return null;
+              
+              // 1. 검색 조건에 지역 필터가 있으면 그 지역을 기준으로 사용
+              let regionName: string | null = null;
+              const regionFilter = activeFilters.find(f => f.label.includes('지역'));
+              
+              if (regionFilter) {
+                // 지역명 추출 (첫 번째 단어만, 예: "서울" 또는 "서울 강남구" → "서울")
+                const regionValue = regionFilter.value;
+                regionName = regionValue.trim().split(/\s+/)[0];
+              }
+              
+              // 2. 지역 필터가 없으면 전체 데이터셋에서 가장 많은 지역을 기준으로 사용
+              if (!regionName && referenceRegionStats.length > 0) {
+                regionName = referenceRegionStats[0].region || '';
+              }
+              
+              if (!regionName) return null;
+              
+              // 전체 데이터셋에서 해당 지역인 사람 수 찾기
+              const regionInTotal = referenceRegionStats.find(r => r.region === regionName);
+              const regionCountInTotal = regionInTotal?.count || 0;
+              
+              // 전체 데이터셋에서 해당 지역이 아닌 사람 수
+              const nonRegionCountInTotal = referenceTotal - regionCountInTotal;
+              
+              // 비율 계산
+              const regionPercentage = referenceTotal > 0 ? Math.round((regionCountInTotal / referenceTotal) * 100) : 0;
+              const nonRegionPercentage = 100 - regionPercentage;
+              
+              return {
+                region: regionName,
+                targetCount: regionCountInTotal,
+                targetPercentage: regionPercentage,
+                referenceCount: nonRegionCountInTotal,
+                referencePercentage: nonRegionPercentage
+              };
+            };
+            
+            // 성별 기준: 전체 데이터셋에서 해당 성별인 사람 수 vs 해당 성별이 아닌 사람 수
+            const getGenderComparison = () => {
+              if (referenceGenderStats.length === 0) return null;
+              
+              // 1. 검색 조건에 성별 필터가 있으면 그 성별을 기준으로 사용
+              let targetGenderKey: string | null = null;
+              let genderLabel: string | null = null;
+              const genderFilter = activeFilters.find(f => f.label.includes('성별'));
+              
+              if (genderFilter) {
+                const genderValue = genderFilter.value;
+                // 'M'/'F' 또는 '남'/'여' 형식 모두 지원
+                if (genderValue === 'M' || genderValue === '남' || genderValue === '남성' || genderValue === '남자') {
+                  targetGenderKey = 'M';
+                  genderLabel = '남';
+                } else if (genderValue === 'F' || genderValue === '여' || genderValue === '여성' || genderValue === '여자') {
+                  targetGenderKey = 'F';
+                  genderLabel = '여';
+                } else {
+                  targetGenderKey = genderValue;
+                  genderLabel = genderValue;
+                }
+              }
+              
+              // 2. 성별 필터가 없으면 전체 데이터셋에서 가장 많은 성별을 기준으로 사용
+              if (!targetGenderKey && referenceGenderStats.length > 0) {
+                const mainGender = referenceGenderStats[0].gender || '';
+                if (mainGender === 'M' || mainGender === '남') {
+                  targetGenderKey = 'M';
+                  genderLabel = '남';
+                } else if (mainGender === 'F' || mainGender === '여') {
+                  targetGenderKey = 'F';
+                  genderLabel = '여';
+                } else {
+                  targetGenderKey = mainGender;
+                  genderLabel = mainGender;
+                }
+              }
+              
+              if (!targetGenderKey || !genderLabel) return null;
+              
+              // 전체 데이터셋에서 해당 성별인 사람 수 찾기
+              // gender_stats는 '남'/'여' 형식일 수 있고, 'M'/'F' 형식일 수도 있음
+              const genderInTotal = referenceGenderStats.find(g => {
+                const gKey = g.gender;
+                if (targetGenderKey === 'M') return gKey === 'M' || gKey === '남';
+                if (targetGenderKey === 'F') return gKey === 'F' || gKey === '여';
+                return gKey === targetGenderKey;
+              });
+              const genderCountInTotal = genderInTotal?.count || 0;
+              
+              // 전체 데이터셋에서 해당 성별이 아닌 사람 수
+              const nonGenderCountInTotal = referenceTotal - genderCountInTotal;
+              
+              // 비율 계산
+              const genderPercentage = referenceTotal > 0 ? Math.round((genderCountInTotal / referenceTotal) * 100) : 0;
+              const nonGenderPercentage = 100 - genderPercentage;
+              
+              return {
+                gender: genderLabel,
+                targetCount: genderCountInTotal,
+                targetPercentage: genderPercentage,
+                referenceCount: nonGenderCountInTotal,
+                referencePercentage: nonGenderPercentage
+              };
+            };
+            
+            // 연령 기준: 전체 데이터셋에서 해당 연령대인 사람 수 vs 해당 연령대가 아닌 사람 수
+            const getAgeComparison = () => {
+              if (referenceAgeStats.length === 0) return null;
+              
+              // 1. 검색 조건에 연령 필터가 있으면 그 연령대를 기준으로 사용
+              let ageGroup: string | null = null;
+              const ageFilter = activeFilters.find(f => f.label.includes('연령') || f.label.includes('나이'));
+              
+              if (ageFilter) {
+                // "20s" 형식을 "20대"로 변환
+                const ageValue = ageFilter.value;
+                if (ageValue.includes('s')) {
+                  const decade = ageValue.replace('s', '');
+                  ageGroup = `${decade}대`;
+                } else if (ageValue.includes('대')) {
+                  ageGroup = ageValue;
+                } else {
+                  // 숫자만 있는 경우 (예: "20" → "20대")
+                  const decade = parseInt(ageValue);
+                  if (!isNaN(decade)) {
+                    ageGroup = `${decade}대`;
                   }
+                }
+              }
+              
+              // 2. 연령 필터가 없으면 전체 데이터셋에서 가장 많은 연령대를 기준으로 사용
+              if (!ageGroup && referenceAgeStats.length > 0) {
+                ageGroup = referenceAgeStats[0].age_group || '';
+              }
+              
+              if (!ageGroup) return null;
+              
+              // 전체 데이터셋에서 해당 연령대인 사람 수 찾기
+              const ageInTotal = referenceAgeStats.find(a => a.age_group === ageGroup);
+              const ageCountInTotal = ageInTotal?.count || 0;
+              
+              // 전체 데이터셋에서 해당 연령대가 아닌 사람 수
+              const nonAgeCountInTotal = referenceTotal - ageCountInTotal;
+              
+              // 비율 계산
+              const agePercentage = referenceTotal > 0 ? Math.round((ageCountInTotal / referenceTotal) * 100) : 0;
+              const nonAgePercentage = 100 - agePercentage;
+              
+              return {
+                ageGroup: ageGroup,
+                targetCount: ageCountInTotal,
+                targetPercentage: agePercentage,
+                referenceCount: nonAgeCountInTotal,
+                referencePercentage: nonAgePercentage
+              };
+            };
+            
+            const regionComp = getRegionComparison();
+            const genderComp = getGenderComparison();
+            const ageComp = getAgeComparison();
+            
+            return (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-5 text-center">전체 데이터 대비 검색 결과 비교</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* 지역 기준 */}
+                  {regionComp && (
+                    <ComparisonDonutChart
+                      title="지역 기준"
+                      targetLabel="검색 결과"
+                      targetCount={regionComp.targetCount}
+                      targetPercentage={regionComp.targetPercentage}
+                      referenceLabel="전체 데이터"
+                      referenceCount={regionComp.referenceCount}
+                      referencePercentage={regionComp.referencePercentage}
+                      detailLabel={regionComp.region}
+                    />
+                  )}
                   
-                  // 성별 조건 체크
-                  if (requestedGender) {
-                    totalConditions++;
-                    const panelGender = row.gender || '';
-                    // 성별 매칭 (M/남/남성, F/여/여성)
-                    const genderMap: Record<string, string[]> = {
-                      'M': ['M', '남', '남성', '남자'],
-                      'F': ['F', '여', '여성', '여자'],
-                      '남': ['M', '남', '남성', '남자'],
-                      '여': ['F', '여', '여성', '여자'],
-                      '남성': ['M', '남', '남성', '남자'],
-                      '여성': ['F', '여', '여성', '여자'],
-                    };
-                    const requestedGenderVariants = genderMap[requestedGender] || [requestedGender];
-                    if (requestedGenderVariants.some(v => panelGender.includes(v))) {
-                      matchedConditions++;
-                    }
-                  }
+                  {/* 성별 기준 */}
+                  {genderComp && (
+                    <ComparisonDonutChart
+                      title="성별 기준"
+                      targetLabel="검색 결과"
+                      targetCount={genderComp.targetCount}
+                      targetPercentage={genderComp.targetPercentage}
+                      referenceLabel="전체 데이터"
+                      referenceCount={genderComp.referenceCount}
+                      referencePercentage={genderComp.referencePercentage}
+                      detailLabel={genderComp.gender}
+                    />
+                  )}
                   
-                  // 지역 조건 체크
-                  if (requestedRegion) {
-                    totalConditions++;
-                    const panelRegion = row.region || '';
-                    // 여러 지역이 요청된 경우 (예: "부산이나 대구")
-                    const requestedRegions = requestedRegion.split(/[,\s]+|또는|이나/).filter(r => r.trim().length > 0);
-                    const mainRequestedRegions = requestedRegions.map(r => r.split(/\s+/)[0]); // '서울 강남구' -> '서울'
-                    const mainPanelRegion = panelRegion.split(/\s+/)[0]; // '부산 해운대구' -> '부산'
-                    
-                    if (mainRequestedRegions.some(r => mainPanelRegion.includes(r) || r.includes(mainPanelRegion))) {
-                      matchedConditions++;
-                    }
-                  }
-                  
-                  // 일치율 계산 (조건이 없으면 100%, 있으면 일치한 조건 비율)
-                  if (totalConditions > 0) {
-                    matchScore = Math.round((matchedConditions / totalConditions) * 100);
-                  }
-                  
-                  return {
-                    id: row.id || `R-${String(i + 1).padStart(3, '0')}`,
-                    gender: row.gender || '-',
-                    age: row.age || '-',
-                    region: row.region || '-',
-                    lastResponseDate: undefined,
-                    matchScore: matchScore
-                  };
-                })}
-                onPanelClick={onPanelClick}
-                maxItems={4}
+                  {/* 연령 기준 */}
+                  {ageComp && (
+                    <ComparisonDonutChart
+                      title="연령 기준"
+                      targetLabel="검색 결과"
+                      targetCount={ageComp.targetCount}
+                      targetPercentage={ageComp.targetPercentage}
+                      referenceLabel="전체 데이터"
+                      referenceCount={ageComp.referenceCount}
+                      referencePercentage={ageComp.referencePercentage}
+                      detailLabel={ageComp.ageGroup}
               />
             )}
           </div>
+              </div>
+            );
+          })()}
         </div>
       </section>
 

@@ -13,11 +13,9 @@ import {
   CartesianGrid,
 } from 'recharts';
 import type { UnifiedSearchResponse } from '../../../api/search';
-import { BrandAffinityChart } from '../../../components/semantic/BrandAffinityChart';
-import { CarTypeChart } from '../../../components/semantic/CarTypeChart';
-import { KeywordCloud } from '../../../components/semantic/KeywordCloud';
+
 import { HighlightedText } from '../../../components/semantic/HighlightedText';
-import type { PanelItem } from './PanelListCard';
+import type { PanelItem } from '../types/PanelItem';
 
 interface SemanticResultListProps {
   searchResult: {
@@ -441,7 +439,23 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
     searchResult.unified?.total_count ?? searchResult.unified?.count ?? processed.length;
 
   const genderChartData = useMemo(() => {
-    // 백엔드에서 성별 통계를 따로 내려주지 않으므로, 프론트에서 계산
+    // 1순위: 백엔드 gender_stats 사용 (server-side aggregation)
+    const backend = (searchResult.unified as any)?.gender_stats as
+      | Array<{ gender: string; gender_count?: number; count?: number }>
+      | undefined;
+    if (backend && backend.length > 0) {
+      return backend.map((g) => {
+        const raw = (g.gender || '').toString();
+        let name: string;
+        if (['M', '남', '남성', '남자'].some((v) => raw.includes(v))) name = '남성';
+        else if (['F', '여', '여성', '여자'].some((v) => raw.includes(v))) name = '여성';
+        else name = '기타';
+        const value = g.gender_count ?? g.count ?? 0;
+        return { name, value };
+      });
+    }
+
+    // 2순위: 백엔드 통계가 없으면 processed 기준으로 계산
     const counts: Record<string, number> = {};
 
     processed.forEach((row: any) => {
@@ -454,7 +468,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
     });
 
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [processed]);
+  }, [processed, searchResult.unified]);
 
   const ageChartData = useMemo(() => {
     // 1순위: 백엔드 age_stats 사용
@@ -515,6 +529,12 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [processed, searchResult.unified?.region_stats]);
+
+  // 성별/연령대 퍼센트 계산용 총합
+  const totalGenderCount = useMemo(
+    () => genderChartData.reduce((sum, item) => sum + (item.value || 0), 0),
+    [genderChartData],
+  );
 
   const top3 = processed.slice(0, 3);
   const others = processed.slice(3);
@@ -683,7 +703,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             </p>
           </div>
 
-          {/* Gender Donut */}
+          {/* Gender Donut - 남성(블루 계열), 여성(레드 계열), 기타(그레이) + 퍼센트 */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-500">성별 분포</span>
@@ -701,17 +721,34 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                       paddingAngle={4}
                     >
                       {genderChartData.map((entry, index) => {
-                        const colors = ['#7c3aed', '#a855f7', '#e5e7eb'];
-                        return (
-                          <Cell key={`gender-${index}`} fill={colors[index] || colors[0]} />
-                        );
+                        let fill = '#9ca3af'; // 기타: gray
+                        if (entry.name === '남성') fill = '#3b82f6'; // blue-500
+                        else if (entry.name === '여성') fill = '#f97373'; // red-400
+                        return <Cell key={`gender-${index}`} fill={fill} />;
                       })}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => `${value}명`}
-                      contentStyle={{
-                        fontSize: 11,
-                        borderRadius: 8,
+                      content={({ active, payload }) => {
+                        if (active && payload && payload[0]) {
+                          const d: any = payload[0].payload;
+                          const count = d.value || 0;
+                          const pct =
+                            totalGenderCount > 0
+                              ? Math.round((count / totalGenderCount) * 100)
+                              : 0;
+                          return (
+                            <div className="bg-white px-3 py-2 rounded-lg shadow border border-slate-200 text-[11px]">
+                              <div className="font-semibold text-slate-900 mb-1">
+                                {d.name}
+                              </div>
+                              <div className="text-slate-600">
+                                {count.toLocaleString()}명 (
+                                <span className="font-semibold">{pct}%</span>)
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
                       }}
                     />
                   </PieChart>
@@ -724,16 +761,49 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             </div>
           </div>
 
-          {/* Age Bar */}
+          {/* Age Bar / 단일 연령대 전용 카드 */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-500">연령대 분포</span>
             </div>
             <div className="flex-1 min-h-0">
               {ageChartData.length > 0 ? (
+                ageChartData.length === 1 ? (
+                  // 단일 연령대일 때는 카드 형태로 예쁘게 표시
+                  (() => {
+                    const only = ageChartData[0];
+                    const total = only.value || 0;
+                    // 전체 패널 수 대비 비율 (대략)
+                    const ratio =
+                      totalCount > 0 ? Math.round((total / totalCount) * 100) : 0;
+                    return (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="inline-flex flex-col items-center justify-center px-4 py-3 rounded-2xl bg-violet-50 border border-violet-100 shadow-sm">
+                          <div className="text-[11px] text-violet-600 mb-1">
+                            주요 연령대
+                          </div>
+                          <div className="text-xl font-bold text-violet-700 mb-1">
+                            {only.name}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            전체의{' '}
+                            <span className="font-semibold text-violet-700">
+                              {ratio}%
+                            </span>
+                            를 차지합니다.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={ageChartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#e5e7eb"
+                      />
                     <XAxis
                       dataKey="name"
                       tick={{ fontSize: 10 }}
@@ -754,6 +824,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                     <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#8b5cf6" />
                   </BarChart>
                 </ResponsiveContainer>
+                )
               ) : (
                 <div className="flex items-center justify-center h-full text-[11px] text-gray-400">
                   데이터 없음
@@ -762,7 +833,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             </div>
           </div>
 
-          {/* Region Bar (Top 5) */}
+          {/* Region Bar (Top 5) - 연령대 분포처럼 세로 막대 그래프 */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-60 flex flex-col">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-500">주요 거주지 분포</span>
@@ -770,24 +841,21 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             <div className="flex-1 min-h-0">
               {regionChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={regionChartData.slice(0, 5)}
-                    layout="vertical"
-                    barCategoryGap="20%"
-                  >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+                  <BarChart data={regionChartData.slice(0, 5)}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#e5e7eb"
+                    />
                     <XAxis
-                      type="number"
+                      dataKey="name"
+                      tick={{ fontSize: 10 }}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                    />
+                    <YAxis
                       tick={{ fontSize: 10 }}
                       axisLine={{ stroke: '#e5e7eb' }}
                       allowDecimals={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={70}
-                      tick={{ fontSize: 10 }}
-                      axisLine={{ stroke: '#e5e7eb' }}
                     />
                     <Tooltip
                       formatter={(value: number) => `${value}명`}
@@ -796,7 +864,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                         borderRadius: 8,
                       }}
                     />
-                    <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="#7c3aed" />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#7c3aed" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -869,8 +937,8 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
               ];
 
               const color = colors[index % colors.length];
-
-              return (
+        
+        return (
                 <div
                   key={item.keyword}
                   className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col"
@@ -879,27 +947,27 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                   <div className={`px-4 py-2 bg-gradient-to-r ${color.header} text-white flex items-center justify-between`}>
                     <div className="text-xs font-semibold">#{rank}</div>
                     <div className="text-[10px] opacity-90">상위 키워드</div>
-                  </div>
+            </div>
 
                   {/* 본문 */}
                   <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                     <div>
                       <div className="text-sm font-bold text-slate-900 mb-3">
                         {item.keyword}
-                      </div>
+              </div>
 
                       <div className="flex items-baseline justify-between mb-1.5">
                         <div className="text-[11px] text-slate-500">언급 패널</div>
                         <div className="text-base font-semibold text-slate-900">
                           {item.panelCount.toLocaleString()}명
-                        </div>
-                      </div>
+              </div>
+            </div>
 
                       <div className="flex items-center justify-between mb-1">
                         <div className="text-[11px] text-slate-500">전체 대비</div>
                         <div className="text-xs font-semibold text-slate-700">
                           {item.ratio}%
-                        </div>
+              </div>
                       </div>
 
                       <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-2">
@@ -937,7 +1005,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
               );
             })}
           </div>
-        </section>
+          </section>
       )}
 
       {/* 키워드 연관성 분석 + 패턴 카드 */}
@@ -1084,7 +1152,11 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                   </div>
                   {ageChartData.length > 0 ? (
                     (() => {
-                      const main = ageChartData[0];
+                      // 가장 많은 인원이 포함된 연령대 선택
+                      const main = ageChartData.reduce(
+                        (max, item) => (item.value > max.value ? item : max),
+                        ageChartData[0],
+                      );
                       const totalPanels = processed.length || totalCount || 1;
                       const ratio = Math.round(
                         ((main.value || 0) / totalPanels) * 100,
@@ -1197,99 +1269,6 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
         </section>
       )}
 
-      {/* 🚗 Brand & Car Type Analysis (브랜드/차량 타입 분석) - 차량 관련 질의일 때만 표시 */}
-      {(() => {
-        // 질의가 차량/자동차 관련인지 확인
-        const carRelatedKeywords = ['차', '자동차', '차량', '브랜드', '모델', '운전', '드라이브', '차고', '소유차', '보유차'];
-        const queryLower = query.toLowerCase();
-        const keywordsLower = [...apiMatchingKeywords, ...semanticKeywords].map(k => k.toLowerCase());
-        const allText = [queryLower, ...keywordsLower].join(' ');
-        
-        const isCarRelated = carRelatedKeywords.some(keyword => allText.includes(keyword));
-        const hasCarData = Object.keys((searchResult as any)?.unified?.brand_top || {}).length > 0 ||
-                          Object.keys((searchResult as any)?.unified?.car_type_top || {}).length > 0;
-        
-        // 차량 관련 질의이고 데이터가 있을 때만 표시
-        if (!isCarRelated || !hasCarData) {
-          return null;
-        }
-        
-        return (
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">🚗 브랜드 및 차량 모델 분석</h3>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Brand Affinity Chart */}
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                <BrandAffinityChart
-                  brandAffinity={(searchResult as any)?.unified?.brand_top || {}}
-                  maxItems={5}
-                />
-              </div>
-
-              {/* Car Type Chart */}
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                <CarTypeChart
-                  carTypeAffinity={(searchResult as any)?.unified?.car_type_top || {}}
-                  maxItems={5}
-                />
-              </div>
-            </div>
-
-            {/* Keyword Cloud */}
-            {apiMatchingKeywords.length > 0 && (
-              <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                <KeywordCloud keywords={apiMatchingKeywords} maxItems={20} />
-              </div>
-            )}
-          </section>
-        );
-      })()}
-
-      {/* 🏆 Top Match (상위 3명) */}
-      {top3.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Trophy className="w-5 h-5 text-yellow-500" />
-            <h3 className="text-lg font-bold text-gray-900">Top Match (상위 3명)</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {top3.map((row: any, idx: number) =>
-              renderResultCard(row, {
-                badge:
-                  idx === 0 ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
-                      최고 점수
-                    </span>
-                  ) : undefined,
-              })
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* 🥈 High Relevance (나머지) */}
-      {others.length > 0 && (
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Award className="w-5 h-5 text-violet-500" />
-            <h3 className="text-lg font-semibold text-gray-900">High Relevance (추가 후보)</h3>
-            <span className="text-sm text-gray-500">총 {others.length}명</span>
-          </div>
-          <div className="space-y-3">
-            {others.map((row: any) =>
-              renderResultCard(row, {
-                badge: (
-                  <span className="text-[11px] text-gray-400">
-                    {row.matchScore >= 80 ? '높은 매칭' : '관련 있음'}
-                  </span>
-                ),
-              })
-            )}
-          </div>
-        </section>
-      )}
     </div>
   );
 };

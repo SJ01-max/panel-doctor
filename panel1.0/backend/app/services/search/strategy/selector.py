@@ -32,17 +32,10 @@ class StrategySelector:
         Returns:
             "filter_first" | "semantic_first" | "hybrid"
         """
+        # LLM이 파싱한 filters / semantic_keywords를 그대로 신뢰해서 사용한다.
+        # 더 이상 semantic_keywords를 보고 filters를 보정하거나 강제로 주입하지 않는다.
         filters = parsed_query.get("filters", {})
         semantic_keywords = parsed_query.get("semantic_keywords", [])
-        
-        # Correction: semantic_keywords에 정형 필드가 들어왔는지 재검사
-        corrected = StrategySelector._correct_structured_fields(semantic_keywords, filters)
-        if corrected:
-            filters = corrected["filters"]
-            semantic_keywords = corrected["semantic_keywords"]
-            parsed_query["filters"] = filters
-            parsed_query["semantic_keywords"] = semantic_keywords
-            print(f"[CORRECTION] 정형 필드 보정 완료: filters={filters}, semantic_keywords={semantic_keywords}")
         
         # filters가 비어있지 않은지 확인
         has_filters = bool(filters) and any(
@@ -68,81 +61,6 @@ class StrategySelector:
         print(f"  - semantic_keywords: {semantic_keywords} (has_semantic={has_semantic})")
         
         return strategy
-    
-    @staticmethod
-    def _correct_structured_fields(semantic_keywords: list, filters: Dict[str, Any]) -> Dict[str, Any] | None:
-        """semantic_keywords에서 정형 필드를 찾아 filters로 이동"""
-        if not semantic_keywords:
-            return None
-        
-        import re
-        corrected_filters = filters.copy() if filters else {}
-        corrected_keywords = []
-        corrected = False
-        
-        region_list = ["서울", "부산", "경기", "대구", "인천", "광주", "대전", "울산", 
-                       "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
-        
-        for keyword in semantic_keywords:
-            if not isinstance(keyword, str):
-                corrected_keywords.append(keyword)
-                continue
-            
-            keyword_clean = keyword.strip()
-            moved = False
-            
-            # 지역명 체크
-            for region in region_list:
-                if region in keyword_clean or keyword_clean in region:
-                    if not corrected_filters.get("region"):
-                        corrected_filters["region"] = region
-                        print(f"[CORRECTION] strategy_selector: '{keyword}' → filters.region='{region}'")
-                        corrected = True
-                        moved = True
-                        break
-            
-            if moved:
-                continue
-            
-            # 연령 체크
-            age_match = re.search(r'(\d+)대', keyword_clean)
-            if age_match:
-                age_num = int(age_match.group(1))
-                if 20 <= age_num < 70:
-                    age_value = f"{age_num//10*10}s"
-                    if not corrected_filters.get("age"):
-                        corrected_filters["age"] = age_value
-                        print(f"[CORRECTION] strategy_selector: '{keyword}' → filters.age='{age_value}'")
-                        corrected = True
-                        moved = True
-            
-            if moved:
-                continue
-            
-            # 성별 체크
-            gender_map = {
-                "남자": "M", "남성": "M", "남": "M",
-                "여자": "F", "여성": "F", "여": "F"
-            }
-            for gender_term, gender_code in gender_map.items():
-                if gender_term in keyword_clean:
-                    if not corrected_filters.get("gender"):
-                        corrected_filters["gender"] = gender_code
-                        print(f"[CORRECTION] strategy_selector: '{keyword}' → filters.gender='{gender_code}'")
-                        corrected = True
-                        moved = True
-                        break
-            
-            if not moved:
-                corrected_keywords.append(keyword)
-        
-        if corrected:
-            return {
-                "filters": corrected_filters,
-                "semantic_keywords": corrected_keywords
-            }
-        
-        return None
     
     @staticmethod
     def get_strategy_info(strategy: SearchStrategy) -> Dict[str, Any]:

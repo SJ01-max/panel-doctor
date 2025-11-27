@@ -2,7 +2,7 @@ import { MagicSearchBar } from '../../features/panel/components/MagicSearchBar';
 import { ResultDashboard } from '../../features/panel/components/ResultDashboard';
 import { PanelDetailSlideOver } from '../../features/panel/components/PanelDetailSlideOver';
 import { usePanelSearch } from '../../features/panel/hooks/usePanelSearch';
-import type { PanelItem } from '../../features/panel/components/PanelListCard';
+import type { PanelItem } from '../../features/panel/types/PanelItem';
 
 // 인터랙티브 필터 칩
 const FilterChip = ({ 
@@ -73,25 +73,6 @@ const DashboardSkeleton = () => (
               <div className="h-full bg-gray-200 rounded" />
             </div>
           ))}
-        </div>
-
-        {/* 페르소나 & 리스트 스켈레톤 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-gray-100 rounded-2xl p-6 h-64 animate-pulse">
-            <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
-            <div className="space-y-3">
-              <div className="h-4 bg-gray-200 rounded w-full" />
-              <div className="h-4 bg-gray-200 rounded w-3/4" />
-            </div>
-          </div>
-          <div className="bg-gray-100 rounded-2xl p-6 h-64 animate-pulse">
-            <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-12 bg-gray-200 rounded" />
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </section>

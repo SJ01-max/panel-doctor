@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Brain, TrendingUp, MapPin, Users, Filter, Download, Trophy, Award, ChevronDown, ChevronUp, Star, BarChart3, Target, Sparkles } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, CartesianGrid, Legend, RadialBarChart, RadialBar } from 'recharts';
+import { Brain, Filter, Download, BarChart3, Target, Sparkles } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, CartesianGrid, RadialBarChart, RadialBar } from 'recharts';
 import type { UnifiedSearchResponse } from '../../../api/search';
-import type { PanelItem } from './PanelListCard';
+import type { PanelItem } from '../types/PanelItem';
 import { buildSemanticSummary, type AgeScorePoint, type RegionScorePoint, type SemanticStats } from '../../../utils/semanticSummary';
 
 interface SemanticSearchResultProps {
@@ -158,8 +158,6 @@ export const SemanticSearchResult: React.FC<SemanticSearchResultProps> = ({
   onDownloadExcel
 }) => {
   const [similarityThreshold, setSimilarityThreshold] = useState(50);
-  const [showTopN, setShowTopN] = useState(50);
-  const [showOthers, setShowOthers] = useState(false);
   const [selectedAgeFilter, setSelectedAgeFilter] = useState<string>('all');
   const [selectedGenderFilter, setSelectedGenderFilter] = useState<string>('all');
   const [selectedRegionFilter, setSelectedRegionFilter] = useState<string>('all');
@@ -219,8 +217,9 @@ export const SemanticSearchResult: React.FC<SemanticSearchResultProps> = ({
         return true;
       })
       .sort((a, b) => b.matchScore - a.matchScore)
-      .slice(0, showTopN);
-  }, [results, similarityThreshold, showTopN, selectedAgeFilter, selectedGenderFilter, selectedRegionFilter]);
+      // 인사이트/키워드/리스트용 상위 패널 집합: Top 1000으로 고정
+      .slice(0, 1000);
+  }, [results, similarityThreshold, selectedAgeFilter, selectedGenderFilter, selectedRegionFilter]);
   
   // 통계 계산 (processedResults가 비어있으면 results 사용)
   const stats = useMemo(() => {
@@ -375,14 +374,6 @@ export const SemanticSearchResult: React.FC<SemanticSearchResultProps> = ({
       .sort((a, b) => b.avgScore - a.avgScore)
       .slice(0, 5);
   }, [processedResults, results]);
-  
-  // 결과를 3개 그룹으로 분류
-  const { topMatch, highRelevance, others } = useMemo(() => {
-    const topMatch = processedResults.slice(0, 3);
-    const highRelevance = processedResults.slice(3, 20);
-    const others = processedResults.slice(20);
-    return { topMatch, highRelevance, others };
-  }, [processedResults]);
   
   // 고유 지역 목록
   const uniqueRegions = useMemo(() => {
@@ -832,190 +823,8 @@ export const SemanticSearchResult: React.FC<SemanticSearchResultProps> = ({
               ))}
             </select>
           </div>
-          <div>
-            <label className="text-xs text-gray-600 mb-2 block">표시 개수</label>
-            <select
-              value={showTopN}
-              onChange={(e) => setShowTopN(Number(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-            >
-              <option value={20}>Top 20</option>
-              <option value={50}>Top 50</option>
-              <option value={100}>Top 100</option>
-              <option value={200}>Top 200</option>
-            </select>
-          </div>
+          {/* 표시 개수 드롭다운 제거하고 Top 200 고정 */}
         </div>
-      </div>
-      
-      {/* ⑥ 패널 리스트 - 카드형 */}
-      <div className="space-y-6">
-        {/* 🥇 Top Match */}
-        {topMatch.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Trophy className="w-5 h-5 text-yellow-500" />
-              <h3 className="text-lg font-bold text-gray-900">Top Match</h3>
-              <span className="text-sm text-gray-500">(상위 3개)</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {topMatch.map((row, idx) => {
-                const matchScore = row.matchScore || 0;
-                const scoreColor = matchScore >= 90 ? 'bg-green-500' : matchScore >= 80 ? 'bg-blue-500' : 'bg-violet-500';
-                
-                return (
-                  <div
-                    key={idx}
-                    className="bg-white rounded-2xl border-2 border-violet-100 p-5 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer"
-                    onClick={() => onPanelClick({
-                      id: row.respondent_id || row.id || `panel-${idx}`,
-                      gender: row.gender,
-                      age: row.age,
-                      region: row.region,
-                      matchScore,
-                      content: row.content,
-                      semanticKeywords: parsedQuery?.semantic_keywords
-                    })}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={`w-16 h-16 rounded-full ${scoreColor} flex items-center justify-center text-white text-2xl font-bold`}>
-                        {matchScore}%
-                      </div>
-                      {idx === 0 && <Trophy className="w-6 h-6 text-yellow-500" />}
-                    </div>
-                    <div className="text-sm font-semibold text-gray-900 mb-2">
-                      {row.respondent_id || `패널 ${idx + 1}`}
-                    </div>
-                    <div className="text-xs text-gray-600 mb-3">
-                      {row.age} · {row.gender} · {row.region}
-                    </div>
-                    {row.content && (
-                      <div className="text-xs text-gray-500 line-clamp-2">
-                        {highlightMatchText(
-                          row.content.substring(0, 80), 
-                          effectiveQuery, 
-                          parsedQuery?.semantic_keywords
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        
-        {/* 🥈 High Relevance */}
-        {highRelevance.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Award className="w-5 h-5 text-violet-500" />
-              <h3 className="text-lg font-semibold text-gray-900">High Relevance</h3>
-              <span className="text-sm text-gray-500">({highRelevance.length}개)</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {highRelevance.map((row, idx) => {
-                const matchScore = row.matchScore || 0;
-                const scoreColor = matchScore >= 90 ? 'bg-green-500' : matchScore >= 80 ? 'bg-blue-500' : 'bg-violet-500';
-                
-                return (
-                  <div
-                    key={idx}
-                    className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-                    onClick={() => onPanelClick({
-                      id: row.respondent_id || row.id || `panel-${idx + 3}`,
-                      gender: row.gender,
-                      age: row.age,
-                      region: row.region,
-                      matchScore,
-                      content: row.content,
-                      semanticKeywords: parsedQuery?.semantic_keywords
-                    })}
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-12 h-12 rounded-full ${scoreColor} flex items-center justify-center text-white text-sm font-bold`}>
-                        {matchScore}%
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">
-                          {row.respondent_id || `패널 ${idx + 4}`}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {row.age} · {row.gender} · {row.region}
-                        </div>
-                      </div>
-                    </div>
-                    {row.content && (
-                      <div className="text-xs text-gray-500 line-clamp-2 mt-2">
-                        {highlightMatchText(
-                          row.content.substring(0, 80), 
-                          effectiveQuery, 
-                          parsedQuery?.semantic_keywords
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        
-        {/* 🥉 Others */}
-        {others.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowOthers(!showOthers)}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors mb-4"
-            >
-              <div className="flex items-center gap-2">
-                <Star className="w-5 h-5 text-gray-500" />
-                <h3 className="text-base font-semibold text-gray-900">Others</h3>
-                <span className="text-sm text-gray-500">({others.length}개)</span>
-              </div>
-              {showOthers ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </button>
-            {showOthers && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {others.map((row, idx) => {
-                  const matchScore = row.matchScore || 0;
-                  return (
-                    <div
-                      key={idx}
-                      className="bg-white rounded-lg border border-gray-100 p-3 hover:shadow-sm transition-all cursor-pointer"
-                      onClick={() => onPanelClick({
-                        id: row.respondent_id || row.id || `panel-${idx + 20}`,
-                        gender: row.gender,
-                        age: row.age,
-                        region: row.region,
-                        matchScore,
-                        content: row.content,
-                        semanticKeywords: parsedQuery?.semantic_keywords
-                      })}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="px-2 py-1 bg-violet-100 text-violet-700 rounded text-xs font-bold">
-                          {matchScore}%
-                        </span>
-                        <span className="text-xs text-gray-900">{row.respondent_id || `패널 ${idx + 21}`}</span>
-                        <span className="text-xs text-gray-500">{row.age} · {row.gender} · {row.region}</span>
-                      </div>
-                      {row.content && (
-                        <div className="text-xs text-gray-500 line-clamp-1 mt-1">
-                          {highlightMatchText(
-                            row.content.substring(0, 60), 
-                            effectiveQuery, 
-                            parsedQuery?.semantic_keywords
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
       
       {/* 다운로드 버튼 */}

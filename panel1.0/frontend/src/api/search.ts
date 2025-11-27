@@ -42,6 +42,13 @@ export interface UnifiedSearchResponse {
   fallback_used?: string | null;
   region_stats?: Array<{ region: string; region_count: number }>; // 지역별 통계 추가
   age_stats?: Array<{ age_group: string; age_count: number }>; // 연령대별 통계 추가
+  gender_stats?: Array<{ gender: string; gender_count: number }>; // 성별 통계 추가
+  total_dataset_stats?: {
+    total_count: number;
+    gender_stats: Array<{ gender: string; count: number }>;
+    age_stats: Array<{ age_group: string; count: number }>;
+    region_stats: Array<{ region: string; count: number }>;
+  }; // 전체 데이터셋 통계 (기준 집단)
 }
 
 /**
