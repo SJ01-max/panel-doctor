@@ -13,7 +13,6 @@ import {
   CartesianGrid,
 } from 'recharts';
 import type { UnifiedSearchResponse } from '../../../api/search';
-import { InsightSummary } from '../../../components/semantic/InsightSummary';
 import { BrandAffinityChart } from '../../../components/semantic/BrandAffinityChart';
 import { CarTypeChart } from '../../../components/semantic/CarTypeChart';
 import { KeywordCloud } from '../../../components/semantic/KeywordCloud';
@@ -266,7 +265,167 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
         };
       })
       .sort((a, b) => b.matchScore - a.matchScore);
-  }, [rawResults, highlightKeywords]);
+  }, [rawResults, highlightKeywords, query, semanticKeywords, apiMatchingKeywords]);
+
+  // 🔎 핵심 키워드 통계 (Top 8) - 백엔드 키워드 + 실제 패널 응답 기반
+  const keywordStats = useMemo(() => {
+    // 우선순위: 임베딩 기반 키워드 > 매칭 키워드 > semantic_keywords
+    const baseKeywords =
+      apiEmbeddingKeywords.length > 0
+        ? apiEmbeddingKeywords
+        : apiMatchingKeywords.length > 0
+        ? apiMatchingKeywords
+        : semanticKeywords;
+
+    if (!baseKeywords || baseKeywords.length === 0 || processed.length === 0) {
+      return [];
+    }
+
+    const keywordSet = Array.from(
+      new Set(
+        baseKeywords
+          .map((k) => k?.trim())
+          .filter((k): k is string => !!k && k.length > 1)
+      )
+    );
+
+    if (keywordSet.length === 0) return [];
+
+    const stats = keywordSet.map((keyword) => {
+      const kwLower = keyword.toLowerCase();
+      let panelCount = 0;
+
+      processed.forEach((row: any) => {
+        const content = (row.content || '').toString();
+        const sentences: string[] = (row.sentences as string[]) || [];
+        const evidence: string[] = (row.evidenceSentences as string[]) || [];
+
+        const haystack = [
+          content,
+          ...sentences,
+          ...evidence,
+          ...(row.match_reasons || []),
+        ]
+          .filter((s) => !!s)
+          .join(' | ')
+          .toLowerCase();
+
+        if (haystack.includes(kwLower)) {
+          panelCount += 1;
+        }
+      });
+
+      const ratio =
+        processed.length > 0
+          ? Math.round((panelCount / processed.length) * 100)
+          : 0;
+
+      return {
+        keyword,
+        panelCount,
+        ratio,
+      };
+    });
+
+    return stats
+      .filter((s) => s.panelCount > 0)
+      .sort((a, b) => b.panelCount - a.panelCount)
+      .slice(0, 8);
+  }, [processed, apiEmbeddingKeywords, apiMatchingKeywords, semanticKeywords]);
+
+  // 키워드 연관성 분석 (강한/중간/독립 키워드)
+  const keywordRelations = useMemo(() => {
+    if (keywordStats.length === 0 || processed.length === 0) {
+      return {
+        strong: [] as Array<{ pair: [string, string]; ratio: number }>,
+        medium: [] as Array<{ pair: [string, string]; ratio: number }>,
+        independent: [] as Array<{ keyword: string; soloRatio: number }>,
+      };
+    }
+
+    const keywords = keywordStats.map((k) => k.keyword);
+    const pairCount: Record<string, number> = {};
+    const singleCount: Record<string, number> = {};
+
+    processed.forEach((row: any) => {
+      const content = (row.content || '').toString().toLowerCase();
+      const sentences: string[] = (row.sentences as string[]) || [];
+      const evidence: string[] = (row.evidenceSentences as string[]) || [];
+      const haystack = [
+        content,
+        ...sentences,
+        ...evidence,
+        ...(row.match_reasons || []),
+      ]
+        .filter((s) => !!s)
+        .join(' | ')
+        .toLowerCase();
+
+      const present: string[] = [];
+      keywords.forEach((kw) => {
+        const kwLower = kw.toLowerCase();
+        if (haystack.includes(kwLower)) {
+          present.push(kw);
+          singleCount[kw] = (singleCount[kw] || 0) + 1;
+        }
+      });
+
+      // 페어 카운트
+      for (let i = 0; i < present.length; i += 1) {
+        for (let j = i + 1; j < present.length; j += 1) {
+          const [a, b] = [present[i], present[j]].sort();
+          const key = `${a}|||${b}`;
+          pairCount[key] = (pairCount[key] || 0) + 1;
+        }
+      }
+    });
+
+    const strong: Array<{ pair: [string, string]; ratio: number }> = [];
+    const medium: Array<{ pair: [string, string]; ratio: number }> = [];
+
+    Object.entries(pairCount).forEach(([key, count]) => {
+      const [a, b] = key.split('|||') as [string, string];
+      const base = Math.min(singleCount[a] || 1, singleCount[b] || 1);
+      const ratio = base > 0 ? count / base : 0;
+      if (ratio >= 0.7) {
+        strong.push({ pair: [a, b], ratio });
+      } else if (ratio >= 0.4) {
+        medium.push({ pair: [a, b], ratio });
+      }
+    });
+
+    strong.sort((x, y) => y.ratio - x.ratio);
+    medium.sort((x, y) => y.ratio - x.ratio);
+
+    // 독립 키워드: 함께 등장 비율이 낮은 키워드
+    const independent: Array<{ keyword: string; soloRatio: number }> = [];
+    keywords.forEach((kw) => {
+      const total = singleCount[kw] || 0;
+      if (total === 0) return;
+
+      // 이 키워드가 등장한 패널 중 다른 키워드와 같이 나온 비율 추정
+      let withOthers = 0;
+      Object.entries(pairCount).forEach(([key, count]) => {
+        if (key.includes(`${kw}|||`) || key.endsWith(`|||${kw}`)) {
+          withOthers += count;
+        }
+      });
+      const withRatio = Math.min(1, withOthers / total);
+      const soloRatio = 1 - withRatio;
+
+      if (soloRatio >= 0.5) {
+        independent.push({ keyword: kw, soloRatio });
+      }
+    });
+
+    independent.sort((a, b) => b.soloRatio - a.soloRatio);
+
+    return {
+      strong: strong.slice(0, 3),
+      medium: medium.slice(0, 3),
+      independent: independent.slice(0, 3),
+    };
+  }, [keywordStats, processed]);
 
   const togglePanelExpansion = (panelId: string) => {
     setExpandedPanels((prev) => ({
@@ -340,8 +499,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
           name: r.region || '기타',
           value: r.region_count ?? 0,
         }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 5);
+        .sort((a, b) => b.value - a.value);
     }
 
     // 2순위: 프론트에서 즉석 계산
@@ -355,8 +513,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
 
     return Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+      .sort((a, b) => b.value - a.value);
   }, [processed, searchResult.unified?.region_stats]);
 
   const top3 = processed.slice(0, 3);
@@ -500,13 +657,6 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
         )}
       </div>
 
-      {/* AI 인사이트 요약 카드 (임베딩 기반 키워드 우선 사용) */}
-      <InsightSummary
-        summary={apiSummarySentence}
-        keywords={apiEmbeddingKeywords.length > 0 ? apiEmbeddingKeywords : apiMatchingKeywords}
-        features={apiCommonFeatures}
-      />
-
       {/* 📊 검색 결과 그룹 분석 (데이터 분포 대시보드) */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -612,15 +762,19 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             </div>
           </div>
 
-          {/* Region Bar */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col">
+          {/* Region Bar (Top 5) */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-60 flex flex-col">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-500">주요 거주지 분포</span>
             </div>
             <div className="flex-1 min-h-0">
               {regionChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={regionChartData} layout="vertical" barCategoryGap="20%">
+                  <BarChart
+                    data={regionChartData.slice(0, 5)}
+                    layout="vertical"
+                    barCategoryGap="20%"
+                  >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
                     <XAxis
                       type="number"
@@ -654,6 +808,394 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
           </div>
         </div>
       </section>
+
+      {/* 🔥 이 집단이 추구하는 핵심 키워드 Top 8 */}
+      {keywordStats.length > 0 && (
+        <section className="mt-8 mb-10">
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center justify-center px-5 py-1.5 rounded-full bg-white shadow-sm border border-slate-100 text-sm font-semibold text-slate-800">
+              <span className="mr-2 text-violet-500 text-base">#</span>
+              이 집단이 추구하는 핵심 키워드 Top {keywordStats.length}
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              빈도수와 중요도를 기반으로 정렬했습니다.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {keywordStats.map((item, index) => {
+              const rank = index + 1;
+              const colors = [
+                {
+                  header: 'from-orange-500 to-red-500',
+                  bar: 'bg-orange-400',
+                  badge: 'bg-orange-50 text-orange-700',
+                },
+                {
+                  header: 'from-indigo-500 to-purple-500',
+                  bar: 'bg-indigo-400',
+                  badge: 'bg-indigo-50 text-indigo-700',
+                },
+                {
+                  header: 'from-emerald-500 to-green-500',
+                  bar: 'bg-emerald-400',
+                  badge: 'bg-emerald-50 text-emerald-700',
+                },
+                {
+                  header: 'from-sky-500 to-blue-500',
+                  bar: 'bg-sky-400',
+                  badge: 'bg-sky-50 text-sky-700',
+                },
+                {
+                  header: 'from-teal-500 to-emerald-500',
+                  bar: 'bg-teal-400',
+                  badge: 'bg-teal-50 text-teal-700',
+                },
+                {
+                  header: 'from-amber-500 to-orange-500',
+                  bar: 'bg-amber-400',
+                  badge: 'bg-amber-50 text-amber-700',
+                },
+                {
+                  header: 'from-lime-500 to-green-500',
+                  bar: 'bg-lime-400',
+                  badge: 'bg-lime-50 text-lime-700',
+                },
+                {
+                  header: 'from-rose-500 to-pink-500',
+                  bar: 'bg-rose-400',
+                  badge: 'bg-rose-50 text-rose-700',
+                },
+              ];
+
+              const color = colors[index % colors.length];
+
+              return (
+                <div
+                  key={item.keyword}
+                  className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col"
+                >
+                  {/* 상단 컬러 헤더 */}
+                  <div className={`px-4 py-2 bg-gradient-to-r ${color.header} text-white flex items-center justify-between`}>
+                    <div className="text-xs font-semibold">#{rank}</div>
+                    <div className="text-[10px] opacity-90">상위 키워드</div>
+                  </div>
+
+                  {/* 본문 */}
+                  <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-slate-900 mb-3">
+                        {item.keyword}
+                      </div>
+
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <div className="text-[11px] text-slate-500">언급 패널</div>
+                        <div className="text-base font-semibold text-slate-900">
+                          {item.panelCount.toLocaleString()}명
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-[11px] text-slate-500">전체 대비</div>
+                        <div className="text-xs font-semibold text-slate-700">
+                          {item.ratio}%
+                        </div>
+                      </div>
+
+                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-2">
+                        <div
+                          className={`h-full ${color.bar}`}
+                          style={{ width: `${Math.max(5, item.ratio)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 연관 키워드 간단 태그: 다른 주요 키워드들 중 상위 2~3개를 함께 보여줌 */}
+                    <div>
+                      <div className="text-[11px] text-slate-500 mb-1">연관 키워드</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {keywordStats
+                          .filter((k) => k.keyword !== item.keyword)
+                          .slice(0, 3)
+                          .map((rel) => (
+                            <span
+                              key={rel.keyword}
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${color.badge}`}
+                            >
+                              {rel.keyword}
+                            </span>
+                          ))}
+                        {keywordStats.length <= 1 && (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-50 text-slate-500">
+                            키워드 데이터 분석 중
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 키워드 연관성 분석 + 패턴 카드 */}
+      {(keywordRelations.strong.length > 0 ||
+        keywordRelations.medium.length > 0 ||
+        keywordRelations.independent.length > 0) && (
+        <section className="mb-10">
+          {/* 키워드 연관성 분석 */}
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 mb-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center">
+                <span className="text-violet-600 text-xl">🔗</span>
+              </div>
+              <div>
+                <h3 className="text-base md:text-lg font-semibold text-slate-900">
+                  키워드 연관성 분석
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  키워드 간 동시 출현 빈도를 기반으로 연관 관계를 요약했습니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 강한 연관성 */}
+              <div className="rounded-2xl border border-red-100 bg-red-50/60 px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-500 text-lg">ɸ</span>
+                    <span className="text-sm font-semibold text-red-800">
+                      강한 연관성
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-xs text-red-900">
+                  {keywordRelations.strong.length > 0 ? (
+                    keywordRelations.strong.map((item) => (
+                      <div key={`${item.pair[0]}-${item.pair[1]}`} className="flex items-center justify-between">
+                        <span>
+                          {item.pair[0]} ↔ {item.pair[1]}
+                        </span>
+                        <span className="font-semibold">
+                          {Math.round(item.ratio * 100)}
+                          %
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[11px] text-red-700/70">
+                      아직 강한 연관성이 감지된 키워드 쌍이 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 중간 연관성 */}
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sky-500 text-lg">◎</span>
+                    <span className="text-sm font-semibold text-sky-800">
+                      중간 연관성
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-xs text-sky-900">
+                  {keywordRelations.medium.length > 0 ? (
+                    keywordRelations.medium.map((item) => (
+                      <div key={`${item.pair[0]}-${item.pair[1]}`} className="flex items-center justify-between">
+                        <span>
+                          {item.pair[0]} ↔ {item.pair[1]}
+                        </span>
+                        <span className="font-semibold">
+                          {Math.round(item.ratio * 100)}
+                          %
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[11px] text-sky-700/70">
+                      중간 수준의 연관성이 있는 키워드 쌍이 충분하지 않습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 독립적 키워드 */}
+              <div className="rounded-2xl border border-purple-100 bg-purple-50/60 px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-purple-500 text-lg">✦</span>
+                    <span className="text-sm font-semibold text-purple-900">
+                      독립적 키워드
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-xs text-purple-900">
+                  {keywordRelations.independent.length > 0 ? (
+                    keywordRelations.independent.map((item) => (
+                      <div key={item.keyword} className="flex items-center justify-between">
+                        <span>{item.keyword}</span>
+                        <span className="font-semibold">
+                          단독{' '}
+                          {Math.round(item.soloRatio * 100)}
+                          %
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[11px] text-purple-700/70">
+                      다른 키워드와 분리된 독립적 키워드는 거의 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 이런 패턴을 발견했습니다 */}
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                <span className="text-emerald-600 text-xl">📈</span>
+              </div>
+              <div>
+                <h3 className="text-base md:text-lg font-bold text-slate-900">
+                  이런 패턴을 발견했습니다
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  AI가 분석한 공통점과 특이사항을 요약한 인사이트입니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 연령대 분포 카드 */}
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-5 py-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-slate-700 text-lg">👥</span>
+                    <span className="text-sm font-semibold text-slate-900">
+                      연령대 분포
+                    </span>
+                  </div>
+                  {ageChartData.length > 0 ? (
+                    (() => {
+                      const main = ageChartData[0];
+                      const totalPanels = processed.length || totalCount || 1;
+                      const ratio = Math.round(
+                        ((main.value || 0) / totalPanels) * 100,
+                      );
+                      return (
+                        <>
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {main.name}가 전체의{' '}
+                            <span className="text-violet-600 font-semibold">
+                              {ratio}%
+                            </span>
+                            를 차지하며, 이 연령대에서 의미 기반 반응이 특히 많이
+                            관측됩니다.
+                          </p>
+                          <p className="mt-2 text-[11px] text-violet-700 font-medium">
+                            → {main.name} 타겟팅 캠페인에 특히 유리한 집단입니다.
+                          </p>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      연령대 정보가 충분하지 않아 패턴을 도출하기 어렵습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 주요 증상/관심사 카드 */}
+              <div className="rounded-2xl border border-pink-100 bg-pink-50/80 px-5 py-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-pink-500 text-lg">😥</span>
+                    <span className="text-sm font-semibold text-pink-900">
+                      주요 증상/관심사
+                    </span>
+                  </div>
+                  {keywordStats.length > 0 ? (
+                    (() => {
+                      const topKeywords = keywordStats.slice(0, 3);
+                      const ratioText = topKeywords
+                        .map((k) => k.keyword)
+                        .join(', ');
+                      return (
+                        <>
+                          <p className="text-xs text-pink-900 leading-relaxed">
+                            {ratioText}와(과) 같은 키워드가 응답의{' '}
+                            <span className="font-semibold">
+                              상당수에서 반복
+                            </span>
+                            되어 나타나, 이 집단의 핵심 고민으로 보입니다.
+                          </p>
+                          <p className="mt-2 text-[11px] text-pink-700 font-medium">
+                            → 복합 증상 케어/관련 혜택 메시지에 높은 반응이
+                            기대됩니다.
+                          </p>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <p className="text-xs text-pink-700/80">
+                      키워드 통계가 부족해 주요 증상을 추출할 수 없습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 지역 특성 카드 */}
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/80 px-5 py-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-amber-500 text-lg">📍</span>
+                    <span className="text-sm font-semibold text-amber-900">
+                      지역 특성
+                    </span>
+                  </div>
+                  {regionChartData.length > 0 ? (
+                    (() => {
+                      const main = regionChartData[0];
+                      const totalPanels = processed.length || totalCount || 1;
+                      const ratio = Math.round(
+                        ((main.value || 0) / totalPanels) * 100,
+                      );
+                      return (
+                        <>
+                          <p className="text-xs text-amber-900 leading-relaxed">
+                            {main.name} 거주자가 전체의{' '}
+                            <span className="font-semibold text-amber-700">
+                              {ratio}%
+                            </span>
+                            로, 해당 지역에서 의미 기반 조건에 부합하는 패널이
+                            집중되어 있습니다.
+                          </p>
+                          <p className="mt-2 text-[11px] text-amber-700 font-medium">
+                            → {main.name} 중심의 지역 타겟 캠페인을 우선적으로
+                            고려할 수 있습니다.
+                          </p>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <p className="text-xs text-amber-800/80">
+                      지역 정보가 부족해 특정 지역 패턴을 파악하기 어렵습니다.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 🚗 Brand & Car Type Analysis (브랜드/차량 타입 분석) - 차량 관련 질의일 때만 표시 */}
       {(() => {
