@@ -11,10 +11,12 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  LabelList,
 } from 'recharts';
 import type { UnifiedSearchResponse } from '../../../api/search';
 
 import { HighlightedText } from '../../../components/semantic/HighlightedText';
+import { ModernTable } from '../../../components/ModernTable';
 import type { PanelItem } from '../types/PanelItem';
 
 interface SemanticResultListProps {
@@ -439,23 +441,30 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
     searchResult.unified?.total_count ?? searchResult.unified?.count ?? processed.length;
 
   const genderChartData = useMemo(() => {
-    // 1순위: 백엔드 gender_stats 사용 (server-side aggregation)
+    // 1순위: 백엔드 gender_stats 사용 (server-side aggregation) - 전체 검색 결과 기반인 경우
     const backend = (searchResult.unified as any)?.gender_stats as
       | Array<{ gender: string; gender_count?: number; count?: number }>
       | undefined;
     if (backend && backend.length > 0) {
-      return backend.map((g) => {
-        const raw = (g.gender || '').toString();
-        let name: string;
-        if (['M', '남', '남성', '남자'].some((v) => raw.includes(v))) name = '남성';
-        else if (['F', '여', '여성', '여자'].some((v) => raw.includes(v))) name = '여성';
-        else name = '기타';
-        const value = g.gender_count ?? g.count ?? 0;
-        return { name, value };
-      });
+      // 백엔드 통계의 총합이 totalCount와 일치하는지 확인
+      const backendTotal = backend.reduce((sum, g) => sum + (g.gender_count ?? g.count ?? 0), 0);
+      // 백엔드 통계가 전체 검색 결과를 기반으로 한 경우 (totalCount와 비슷한 경우)
+      if (Math.abs(backendTotal - totalCount) < totalCount * 0.1) {
+        return backend
+          .map((g) => {
+            const raw = (g.gender || '').toString();
+            let name: string;
+            if (['M', '남', '남성', '남자'].some((v) => raw.includes(v))) name = '남성';
+            else if (['F', '여', '여성', '여자'].some((v) => raw.includes(v))) name = '여성';
+            else name = '기타';
+            const value = g.gender_count ?? g.count ?? 0;
+            return { name, value };
+          })
+          .filter((item) => item.name !== '기타'); // 기타 제외
+      }
     }
 
-    // 2순위: 백엔드 통계가 없으면 processed 기준으로 계산
+    // 2순위: processed 기준으로 계산하고 totalCount에 맞게 스케일링
     const counts: Record<string, number> = {};
 
     processed.forEach((row: any) => {
@@ -467,13 +476,31 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
       counts[key] = (counts[key] || 0) + 1;
     });
 
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [processed, searchResult.unified]);
+    // 샘플 기반 통계를 전체 검색 결과 수에 맞게 스케일링
+    const sampleTotal = processed.length;
+    if (sampleTotal > 0 && totalCount > 0) {
+      const scaleFactor = totalCount / sampleTotal;
+      return Object.entries(counts)
+        .filter(([name]) => name !== '기타') // 기타 제외
+        .map(([name, value]) => ({
+          name,
+          value: Math.round(value * scaleFactor),
+        }));
+    }
+
+    return Object.entries(counts)
+      .filter(([name]) => name !== '기타') // 기타 제외
+      .map(([name, value]) => ({ name, value }));
+  }, [processed, searchResult.unified, totalCount]);
 
   const ageChartData = useMemo(() => {
-    // 1순위: 백엔드 age_stats 사용
+    // 1순위: 백엔드 age_stats 사용 - 전체 검색 결과 기반인 경우
     const backend = searchResult.unified?.age_stats;
     if (backend && backend.length > 0) {
+      // 백엔드 통계의 총합이 totalCount와 일치하는지 확인
+      const backendTotal = backend.reduce((sum, a) => sum + (a.age_count ?? 0), 0);
+      // 백엔드 통계가 전체 검색 결과를 기반으로 한 경우 (totalCount와 비슷한 경우)
+      if (Math.abs(backendTotal - totalCount) < totalCount * 0.1) {
       return backend.map((a) => {
         const group = a.age_group || '';
         // "20s" -> "20대"
@@ -483,9 +510,10 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             : group || '기타';
         return { name: label, value: a.age_count ?? 0 };
       });
+      }
     }
 
-    // 2순위: 프론트에서 즉석 계산
+    // 2순위: 프론트에서 즉석 계산하고 totalCount에 맞게 스케일링
     const counts: Record<string, number> = {};
     processed.forEach((row: any) => {
       const text = (row.age || '').toString();
@@ -499,24 +527,36 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
       counts[key] = (counts[key] || 0) + 1;
     });
 
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10));
-  }, [processed, searchResult.unified?.age_stats]);
+    // 샘플 기반 통계를 전체 검색 결과 수에 맞게 스케일링
+    const sampleTotal = processed.length;
+    const scaledData = sampleTotal > 0 && totalCount > 0
+      ? Object.entries(counts).map(([name, value]) => ({
+          name,
+          value: Math.round(value * (totalCount / sampleTotal)),
+        }))
+      : Object.entries(counts).map(([name, value]) => ({ name, value }));
+
+    return scaledData.sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10));
+  }, [processed, searchResult.unified?.age_stats, totalCount]);
 
   const regionChartData = useMemo(() => {
-    // 1순위: 백엔드 region_stats 사용
+    // 1순위: 백엔드 region_stats 사용 - 전체 검색 결과 기반인 경우
     const backend = searchResult.unified?.region_stats;
     if (backend && backend.length > 0) {
+      // 백엔드 통계의 총합이 totalCount와 일치하는지 확인
+      const backendTotal = backend.reduce((sum, r) => sum + (r.region_count ?? 0), 0);
+      // 백엔드 통계가 전체 검색 결과를 기반으로 한 경우 (totalCount와 비슷한 경우)
+      if (Math.abs(backendTotal - totalCount) < totalCount * 0.1) {
       return backend
         .map((r) => ({
           name: r.region || '기타',
           value: r.region_count ?? 0,
         }))
-        .sort((a, b) => b.value - a.value);
+          .sort((a, b) => b.value - a.value);
+      }
     }
 
-    // 2순위: 프론트에서 즉석 계산
+    // 2순위: 프론트에서 즉석 계산하고 totalCount에 맞게 스케일링
     const counts: Record<string, number> = {};
     processed.forEach((row: any) => {
       const regionText = (row.region || '').toString();
@@ -525,10 +565,17 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
       counts[mainRegion] = (counts[mainRegion] || 0) + 1;
     });
 
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [processed, searchResult.unified?.region_stats]);
+    // 샘플 기반 통계를 전체 검색 결과 수에 맞게 스케일링
+    const sampleTotal = processed.length;
+    const scaledData = sampleTotal > 0 && totalCount > 0
+      ? Object.entries(counts).map(([name, value]) => ({
+          name,
+          value: Math.round(value * (totalCount / sampleTotal)),
+        }))
+      : Object.entries(counts).map(([name, value]) => ({ name, value }));
+
+    return scaledData.sort((a, b) => b.value - a.value);
+  }, [processed, searchResult.unified?.region_stats, totalCount]);
 
   // 성별/연령대 퍼센트 계산용 총합
   const totalGenderCount = useMemo(
@@ -679,82 +726,126 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
 
       {/* 📊 검색 결과 그룹 분석 (데이터 분포 대시보드) */}
       <section className="mb-8">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-base md:text-lg font-semibold text-gray-900">
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
               📊 검색 결과 그룹 분석
             </h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-base text-gray-600">
               이번 검색으로 찾아낸 전체 후보 그룹의 분포를 요약해서 보여줍니다.
             </p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col justify-between">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-60 flex flex-col justify-between">
             <div>
-              <div className="text-xs text-gray-500 mb-1">총 검색된 패널 수</div>
-              <div className="text-2xl font-bold text-violet-700">
-                {totalCount.toLocaleString()}명
+              <div className="text-base font-semibold text-gray-700 mb-3">총 검색된 패널 수</div>
+              <div className="text-4xl font-bold text-violet-700 mb-3">
+                {totalCount.toLocaleString()}
+                <span className="text-2xl text-gray-500 ml-1.5 font-normal">명</span>
               </div>
             </div>
-            <p className="text-[11px] text-gray-500 mt-2">
-              의미 기반 검색 조건을 충족하는 전체 후보 수입니다.
-            </p>
+            <div className="text-left">
+              <p className="text-sm text-gray-600 leading-relaxed font-normal">
+                의미 기반 검색 조건을 충족하는<br />
+                전체 후보 수입니다.
+              </p>
+            </div>
           </div>
 
           {/* Gender Donut - 남성(블루 계열), 여성(레드 계열), 기타(그레이) + 퍼센트 */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-500">성별 분포</span>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-60 flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-base font-semibold text-gray-700">성별 분포</span>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 flex flex-col">
               {genderChartData.length > 0 ? (
+                <>
+                  <div className="flex-1 min-h-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={genderChartData}
                       dataKey="value"
                       nameKey="name"
-                      innerRadius={28}
-                      outerRadius={40}
+                          innerRadius={35}
+                          outerRadius={50}
                       paddingAngle={4}
                     >
                       {genderChartData.map((entry, index) => {
-                        let fill = '#9ca3af'; // 기타: gray
-                        if (entry.name === '남성') fill = '#3b82f6'; // blue-500
-                        else if (entry.name === '여성') fill = '#f97373'; // red-400
-                        return <Cell key={`gender-${index}`} fill={fill} />;
+                            let fill = '#9ca3af'; // 기타: gray
+                            if (entry.name === '남성') fill = '#3b82f6'; // blue-500
+                            else if (entry.name === '여성') fill = '#f97373'; // red-400
+                            return <Cell key={`gender-${index}`} fill={fill} />;
                       })}
                     </Pie>
                     <Tooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload[0]) {
-                          const d: any = payload[0].payload;
-                          const count = d.value || 0;
-                          const pct =
-                            totalGenderCount > 0
-                              ? Math.round((count / totalGenderCount) * 100)
-                              : 0;
-                          return (
-                            <div className="bg-white px-3 py-2 rounded-lg shadow border border-slate-200 text-[11px]">
-                              <div className="font-semibold text-slate-900 mb-1">
-                                {d.name}
-                              </div>
-                              <div className="text-slate-600">
-                                {count.toLocaleString()}명 (
-                                <span className="font-semibold">{pct}%</span>)
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
+                          content={({ active, payload }) => {
+                            if (active && payload && payload[0]) {
+                              const d: any = payload[0].payload;
+                              const count = d.value || 0;
+                              const pct =
+                                totalGenderCount > 0
+                                  ? Math.round((count / totalGenderCount) * 100)
+                                  : 0;
+                              return (
+                                <div className="bg-white px-3 py-2 rounded-lg shadow border border-slate-200 text-[11px]">
+                                  <div className="font-semibold text-slate-900 mb-1">
+                                    {d.name}
+                                  </div>
+                                  <div className="text-slate-600">
+                                    {count.toLocaleString()}명 (
+                                    <span className="font-semibold">{pct}%</span>)
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
                       }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
+                  </div>
+                  {/* 성별 라벨과 퍼센트 표시 */}
+                  <div className="flex items-center justify-center gap-6 mt-3">
+                    {genderChartData.map((entry) => {
+                      const count = entry.value || 0;
+                      const pct =
+                        totalGenderCount > 0
+                          ? Math.round((count / totalGenderCount) * 100)
+                          : 0;
+                      const isMale = entry.name === '남성';
+                      const isFemale = entry.name === '여성';
+                      const color = isMale
+                        ? '#3b82f6'
+                        : isFemale
+                        ? '#f97373'
+                        : '#9ca3af';
+                      const label = isMale ? '남' : isFemale ? '여' : entry.name;
+                      
+                      return (
+                        <div
+                          key={entry.name}
+                          className="flex items-center gap-3"
+                        >
+                          <div
+                            className="w-4 h-4 rounded-full shadow-md"
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className="text-base font-bold text-gray-800">
+                            {label}
+                          </span>
+                          <span className="text-base font-bold text-gray-900">
+                            {pct}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               ) : (
-                <div className="flex items-center justify-center h-full text-[11px] text-gray-400">
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
                   데이터 없음
                 </div>
               )}
@@ -762,9 +853,9 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
           </div>
 
           {/* Age Bar / 단일 연령대 전용 카드 */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-44 flex flex-col">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-500">연령대 분포</span>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-60 flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-base font-semibold text-gray-700">연령대 분포</span>
             </div>
             <div className="flex-1 min-h-0">
               {ageChartData.length > 0 ? (
@@ -778,16 +869,16 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                       totalCount > 0 ? Math.round((total / totalCount) * 100) : 0;
                     return (
                       <div className="flex items-center justify-center h-full">
-                        <div className="inline-flex flex-col items-center justify-center px-4 py-3 rounded-2xl bg-violet-50 border border-violet-100 shadow-sm">
-                          <div className="text-[11px] text-violet-600 mb-1">
+                        <div className="inline-flex flex-col items-center justify-center px-6 py-5 rounded-2xl bg-violet-50 border border-violet-200 shadow-md">
+                          <div className="text-sm font-semibold text-violet-600 mb-2">
                             주요 연령대
                           </div>
-                          <div className="text-xl font-bold text-violet-700 mb-1">
+                          <div className="text-3xl font-bold text-violet-700 mb-3">
                             {only.name}
                           </div>
-                          <div className="text-xs text-slate-600">
+                          <div className="text-base text-slate-700">
                             전체의{' '}
-                            <span className="font-semibold text-violet-700">
+                            <span className="font-bold text-violet-700">
                               {ratio}%
                             </span>
                             를 차지합니다.
@@ -806,19 +897,21 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                       />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 10 }}
-                      axisLine={{ stroke: '#e5e7eb' }}
+                      tick={{ fontSize: 13, fill: '#4b5563', fontWeight: 600 }}
+                      axisLine={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                     />
                     <YAxis
-                      tick={{ fontSize: 10 }}
-                      axisLine={{ stroke: '#e5e7eb' }}
+                      tick={{ fontSize: 13, fill: '#4b5563', fontWeight: 600 }}
+                      axisLine={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                       allowDecimals={false}
                     />
                     <Tooltip
-                      formatter={(value: number) => `${value}명`}
+                      formatter={(value: number) => `${value.toLocaleString()}명`}
                       contentStyle={{
-                        fontSize: 11,
+                        fontSize: 14,
                         borderRadius: 8,
+                        fontWeight: 600,
+                        padding: '8px 12px',
                       }}
                     />
                     <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#8b5cf6" />
@@ -826,7 +919,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                 </ResponsiveContainer>
                 )
               ) : (
-                <div className="flex items-center justify-center h-full text-[11px] text-gray-400">
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
                   데이터 없음
                 </div>
               )}
@@ -834,9 +927,9 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
           </div>
 
           {/* Region Bar (Top 5) - 연령대 분포처럼 세로 막대 그래프 */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-60 flex flex-col">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-500">주요 거주지 분포</span>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-60 flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-base font-semibold text-gray-700">주요 거주지 분포</span>
             </div>
             <div className="flex-1 min-h-0">
               {regionChartData.length > 0 ? (
@@ -849,26 +942,28 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                     />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 10 }}
-                      axisLine={{ stroke: '#e5e7eb' }}
+                      tick={{ fontSize: 13, fill: '#4b5563', fontWeight: 600 }}
+                      axisLine={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                     />
                     <YAxis
-                      tick={{ fontSize: 10 }}
-                      axisLine={{ stroke: '#e5e7eb' }}
+                      tick={{ fontSize: 13, fill: '#4b5563', fontWeight: 600 }}
+                      axisLine={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                       allowDecimals={false}
                     />
                     <Tooltip
-                      formatter={(value: number) => `${value}명`}
+                      formatter={(value: number) => `${value.toLocaleString()}명`}
                       contentStyle={{
-                        fontSize: 11,
+                        fontSize: 14,
                         borderRadius: 8,
+                        fontWeight: 600,
+                        padding: '8px 12px',
                       }}
                     />
                     <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#7c3aed" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-[11px] text-gray-400">
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
                   데이터 없음
                 </div>
               )}
@@ -1018,7 +1113,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center">
                 <span className="text-violet-600 text-xl">🔗</span>
-              </div>
+          </div>
               <div>
                 <h3 className="text-base md:text-lg font-semibold text-slate-900">
                   키워드 연관성 분석
@@ -1029,7 +1124,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* 강한 연관성 */}
               <div className="rounded-2xl border border-red-100 bg-red-50/60 px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1057,8 +1152,8 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                     <p className="text-[11px] text-red-700/70">
                       아직 강한 연관성이 감지된 키워드 쌍이 없습니다.
                     </p>
-                  )}
-                </div>
+            )}
+          </div>
               </div>
 
               {/* 중간 연관성 */}
@@ -1100,7 +1195,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                     <span className="text-sm font-semibold text-purple-900">
                       독립적 키워드
                     </span>
-                  </div>
+          </div>
                 </div>
                 <div className="space-y-1.5 text-xs text-purple-900">
                   {keywordRelations.independent.length > 0 ? (
@@ -1111,7 +1206,7 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
                           단독{' '}
                           {Math.round(item.soloRatio * 100)}
                           %
-                        </span>
+                  </span>
                       </div>
                     ))
                   ) : (
@@ -1269,6 +1364,105 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
         </section>
       )}
 
+      {/* 데이터 테이블 (정확한 조건 일치) */}
+      <section className="mt-8 mb-10">
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              데이터 테이블 (정확한 조건 일치)
+            </h3>
+            <button
+              onClick={onDownloadExcel}
+              className="flex items-center gap-2 px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-semibold transition-colors"
+            >
+              <Download size={16} />
+              엑셀 다운로드
+            </button>
+          </div>
+          
+          <TableWithInfiniteScroll
+            allResults={allResults.length > 0 ? allResults : (searchResult.unified?.results || [])}
+            tableColumns={[
+              { key: 'id', label: 'ID' },
+              { key: 'gender', label: '성별' },
+              { key: 'age', label: '나이' },
+              { key: 'region', label: '지역' },
+              { key: 'content', label: '특이사항' },
+            ]}
+            highlightFilter={null}
+          />
+        </div>
+      </section>
+
+    </div>
+  );
+};
+
+// 무한 스크롤 테이블 컴포넌트
+const TableWithInfiniteScroll: React.FC<{
+  allResults: any[];
+  tableColumns: Array<{ key: string; label: string }>;
+  highlightFilter: { type: string; value: string } | null;
+}> = ({ allResults, tableColumns, highlightFilter }) => {
+  const [visibleCount, setVisibleCount] = React.useState(20); // 초기 20개
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const isLoadingRef = React.useRef(false);
+
+  // 테이블 데이터 변환
+  const tableData = React.useMemo(() => {
+    return allResults.slice(0, visibleCount).map((r, idx) => ({
+      id: r.respondent_id || r.doc_id || r.id || `#${idx + 1}`,
+      gender: r.gender || '-',
+      age: r.age_text || r.age || '-',
+      region: r.region || '-',
+      content: r.content ? (r.content.length > 50 ? r.content.substring(0, 50) + '...' : r.content) : '-'
+    }));
+  }, [allResults, visibleCount]);
+
+  // 스크롤 이벤트 핸들러
+  React.useEffect(() => {
+    const handleScroll = () => {
+      if (isLoadingRef.current || visibleCount >= allResults.length) return;
+      
+      if (scrollContainerRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+        // 스크롤이 하단 300px 이내에 도달하면 추가 로딩
+        if (scrollHeight - scrollTop - clientHeight < 300) {
+          isLoadingRef.current = true;
+          // 20개씩 추가 로딩
+          setVisibleCount(prev => {
+            const next = Math.min(prev + 20, allResults.length);
+            isLoadingRef.current = false;
+            return next;
+          });
+        }
+      }
+    };
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => {
+        container.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [visibleCount, allResults.length]);
+
+  return (
+    <div 
+      ref={scrollContainerRef}
+      className="max-h-[600px] overflow-y-auto"
+    >
+      <ModernTable
+        columns={tableColumns}
+        data={tableData}
+        highlightFilter={highlightFilter}
+      />
+      {visibleCount < allResults.length && (
+        <div className="text-center py-4 text-sm text-gray-400 bg-slate-50/50">
+          로딩 중... ({visibleCount} / {allResults.length})
+        </div>
+      )}
     </div>
   );
 };

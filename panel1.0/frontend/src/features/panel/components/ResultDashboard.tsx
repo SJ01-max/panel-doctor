@@ -658,17 +658,17 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
                   .slice(0, 5);
               } else {
                 // 백엔드 통계가 없으면 프론트엔드에서 계산 (fallback)
-                const regionCounts: Record<string, number> = {};
-                currentAllResults.forEach(row => {
-                  const region = row.region || '-';
-                  const mainRegion = region.split(/\s+/)[0] || region;
-                  regionCounts[mainRegion] = (regionCounts[mainRegion] || 0) + 1;
-                });
-                
+              const regionCounts: Record<string, number> = {};
+              currentAllResults.forEach(row => {
+                const region = row.region || '-';
+                const mainRegion = region.split(/\s+/)[0] || region;
+                regionCounts[mainRegion] = (regionCounts[mainRegion] || 0) + 1;
+              });
+              
                 regionData = Object.entries(regionCounts)
-                  .map(([name, value]) => ({ name, value }))
-                  .sort((a, b) => b.value - a.value)
-                  .slice(0, 5);
+                .map(([name, value]) => ({ name, value }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 5);
               }
               
               return regionData.length > 0 ? (
@@ -856,8 +856,8 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
               // 비율 계산
               const agePercentage = referenceTotal > 0 ? Math.round((ageCountInTotal / referenceTotal) * 100) : 0;
               const nonAgePercentage = 100 - agePercentage;
-              
-              return {
+                  
+                  return {
                 ageGroup: ageGroup,
                 targetCount: ageCountInTotal,
                 targetPercentage: agePercentage,
