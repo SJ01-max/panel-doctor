@@ -437,8 +437,13 @@ export const SemanticResultList: React.FC<SemanticResultListProps> = ({
   // -----------------------
   // 통계 데이터 계산 (총합, 성별/연령/지역 분포)
   // -----------------------
-  const totalCount =
-    searchResult.unified?.total_count ?? searchResult.unified?.count ?? processed.length;
+  // ★ 사용자가 limit을 요청했을 때는 실제 반환된 count를 사용
+  const requestedLimit = parsedQuery?.limit;
+  const actualResultCount = processed.length;
+  const totalCountInDB = searchResult.unified?.total_count ?? searchResult.unified?.count ?? actualResultCount;
+  const totalCount = (requestedLimit && requestedLimit > 0) 
+    ? (searchResult.unified?.count ?? actualResultCount)  // 사용자가 limit 요청 시 실제 반환된 count 사용
+    : totalCountInDB;  // limit이 없으면 total_count 사용
 
   const genderChartData = useMemo(() => {
     // 1순위: 백엔드 gender_stats 사용 (server-side aggregation) - 전체 검색 결과 기반인 경우

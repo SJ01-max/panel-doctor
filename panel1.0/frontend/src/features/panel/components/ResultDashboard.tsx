@@ -199,7 +199,7 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
   
   // 사용자가 요청한 조건 추출 (parsed_query에서)
   const parsedQuery = searchResult?.unified?.parsed_query;
-  // const requestedLimit = parsedQuery?.limit; // 현재 사용하지 않음 (totalCount 직접 사용)
+  const requestedLimit = parsedQuery?.limit; // 사용자가 요청한 limit 추출
   const requestedFilters = parsedQuery?.filters || {};
   
   // ★ 총 패널 수 계산
@@ -213,7 +213,12 @@ export const ResultDashboard: React.FC<ResultDashboardProps> = ({
   const strategy = searchResult.unified?.strategy;
   let totalCount: number;
   
-  if (strategy === 'hybrid' && (requestedFilters.age || requestedFilters.gender || requestedFilters.region || searchResult.unified?.parsed_query?.semantic_keywords?.length)) {
+  // ★ 사용자가 limit을 요청했을 때는 실제 반환된 count를 사용
+  if (requestedLimit && requestedLimit > 0) {
+    // 사용자가 명시적으로 개수를 요청한 경우 (예: "100명")
+    // 실제 반환된 결과 개수를 표시 (limit이 적용된 결과)
+    totalCount = searchResult.unified?.count ?? actualResultCount;
+  } else if (strategy === 'hybrid' && (requestedFilters.age || requestedFilters.gender || requestedFilters.region || searchResult.unified?.parsed_query?.semantic_keywords?.length)) {
     // 하이브리드 검색: 구조적 필터 + 키워드 필터가 있으면 정확한 COUNT 사용
     // (벡터 검색의 의미 매칭은 반영되지 않지만, 구조적 필터와 키워드 필터는 정확함)
     totalCount = totalCountInDB;

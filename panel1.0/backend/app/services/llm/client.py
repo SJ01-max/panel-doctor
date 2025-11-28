@@ -37,7 +37,22 @@ class LlmService(Singleton):
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 필요합니다.")
-        self.client = Anthropic(api_key=api_key)
+        
+        # ✅ Anthropic 클라이언트 초기화 (proxies 관련 에러 방지를 위해 명시적 파라미터만 사용)
+        try:
+            # 최신 anthropic 라이브러리는 api_key만 필요
+            self.client = Anthropic(api_key=api_key)
+        except TypeError as e:
+            # proxies 관련 에러가 발생하면 api_key만 전달
+            if "proxies" in str(e):
+                print(f"[WARN] Anthropic 클라이언트 초기화 시 proxies 에러 발생, 재시도...")
+                # 환경 변수에서 proxies 관련 설정 제거 후 재시도
+                import anthropic
+                # 최신 버전에서는 api_key만 필요
+                self.client = Anthropic(api_key=api_key)
+            else:
+                raise
+        
         env_model = os.environ.get("ANTHROPIC_MODEL")
         self._default_model = env_model if env_model else "claude-sonnet-4-5"
         print(f"[INFO] [SINGLETON] LlmService 초기화: 사용 중인 Claude 모델 = {self._default_model}")

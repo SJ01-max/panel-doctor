@@ -138,23 +138,34 @@ def semantic_search():
         search_service = SearchService()
         result = search_service.search(user_query=query)
         
+        # parsed_query에서 limit 추출
+        parsed_query = result.get('parsed_query', {})
+        requested_limit = parsed_query.get('limit')
+        
         # semantic_first 전략이 아니면 에러
         if result.get('strategy') != 'semantic_first':
             # semantic_first로 강제 전환 시도
-            parsed_query = result.get('parsed_query', {})
             semantic_keywords = parsed_query.get('semantic_keywords', [])
             if not semantic_keywords:
                 semantic_keywords = [query]  # 전체 질의를 키워드로 사용
             
-            # semantic_first로 직접 검색
+            # semantic_first로 직접 검색 (limit 적용)
             semantic_result = search_service.semantic_search.search(
                 semantic_keywords=semantic_keywords,
-                limit=500
+                search_text=parsed_query.get('search_text'),
+                limit=requested_limit if requested_limit else 500  # 사용자 요청 limit 사용, 없으면 500
             )
             result = semantic_result
         
-        # 결과 변환
+        # ★ 사용자가 요청한 limit이 있으면 최종 결과에 적용
         panels = result.get('results', [])
+        if requested_limit and requested_limit > 0 and len(panels) > requested_limit:
+            print(f"[DEBUG] 의미 기반 검색 limit({requested_limit}) 적용: {len(panels)}개 → {requested_limit}개로 제한")
+            panels = panels[:requested_limit]
+            result['results'] = panels
+            result['count'] = requested_limit
+        
+        # 결과 변환
         transformed_panels = transform_panels(panels)
         stats = calculate_stats(panels)
         

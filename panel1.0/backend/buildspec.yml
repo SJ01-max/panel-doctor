@@ -6,8 +6,9 @@ phases:
       python: 3.11
     commands:
       - echo "Installing backend dependencies..."
-      - cd SW-1.201/backend
-      - pip install -r requirements.txt -t .
+      - cd panel1.0/backend
+      - pip install --upgrade pip
+      - pip install -r requirements.txt
   build:
     commands:
       - echo "No build step required for Flask backend."

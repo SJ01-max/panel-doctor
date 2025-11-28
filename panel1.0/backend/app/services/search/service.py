@@ -239,8 +239,19 @@ class SearchService:
                 print(f"[ERROR] 상세:\n{traceback.format_exc()}")
                 # 오류가 나도 기본 결과는 반환
         
+        # ★ 사용자가 요청한 limit이 있으면 최종 결과에 적용
+        # (전략에서 DEFAULT_LIMIT을 사용했을 수 있으므로 명시적으로 제한)
+        if limit is not None and limit > 0:
+            results_list = result.get("results", [])
+            if results_list and len(results_list) > limit:
+                print(f"[DEBUG] 사용자 요청 limit({limit}) 적용: {len(results_list)}개 → {limit}개로 제한")
+                result["results"] = results_list[:limit]
+                result["count"] = limit
+                # total_count는 그대로 유지 (전체 매칭 개수)
+        
         print(f"[DEBUG] ========== 최종 결과 ==========")
         print(f"  전략: {strategy}")
+        print(f"  요청 limit: {limit}")
         print(f"  결과 개수: {result.get('count', 0)}")
         if 'total_dataset_stats' in result:
             print(f"  total_dataset_stats 포함됨: total_count={result['total_dataset_stats'].get('total_count', 0)}")
