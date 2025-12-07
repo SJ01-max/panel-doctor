@@ -60,12 +60,38 @@
 # 4. Tasks & Responsibilities (작업 및 역할 분담)
 |  |  |  |
 |-----------------|-----------------|-----------------|
-| 허성재    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>프로젝트 전체 총괄</li><li>백엔드/프론트엔드 아키텍처 설계</li><li>검색 서비스 및 전략 패턴 구현</li><li>LLM 통합 및 프롬프트 엔지니어링</li></ul>     |
-| 김우준   |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100">| <ul><li>백엔드 API 개발</li><li>벡터 검색 서비스 구현</li><li>데이터베이스 최적화</li></ul> |
-| 김완진   |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100">    |<ul><li>백엔드 서비스 레이어 개발</li><li>타겟 그룹 관리 기능 구현</li><li>데이터 내보내기 기능 구현</li></ul>  |
-| 김종욱    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100">    | <ul><li>백엔드 데이터 접근 계층 구현</li><li>SQL 빌더 및 쿼리 최적화</li><li>ETL 스크립트 개발</li></ul>    |
-| 최석진    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100">    | <ul><li>백엔드 API 엔드포인트 개발</li><li>데이터 소스 관리 기능 구현</li><li>시스템 모니터링 및 로깅</li></ul>    |
-| 홍재민    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100">    | <ul><li>프론트엔드 UI/UX 개발</li><li>검색 페이지 및 대시보드 구현</li><li>데이터 시각화 컴포넌트 개발</li><li>반응형 디자인 구현</li></ul>    |
+| 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | 
+<ul>
+<li>DB 적재 및 구축</li>
+<li>서버 연결</li>
+<li>UI 제작</li>
+<li>LLM 구성 및 통합 구현</li>
+</ul> |
+| 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100"> | 
+<ul>
+<li>DB 적재 및 구축</li>
+<li>서버 연결</li>
+<li>임베딩 처리</li>
+</ul> |
+| 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> | 
+<ul>
+<li>DB 임베딩 작업</li>
+<li>벡터 DB 임베딩 구축</li>
+</ul> |
+| 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | 
+<ul>
+<li>서버 구축</li>
+<li>서버 연결 및 연동</li>
+</ul> |
+| 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | 
+<ul>
+<li>LLM 구성 및 모델 통합 구현</li>
+</ul> |
+| 홍재민 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100"> | 
+<ul>
+<li>프론트엔드 개발</li>
+</ul> |
+
 
 <br/>
 
@@ -210,31 +236,7 @@ panel-doctor/
 
 
 
-## 커밋 이모지
-```
-== 코드 관련
-📝	코드 작성
-🔥	코드 제거
-🔨	코드 리팩토링
-💄	UI / style 변경
 
-== 문서&파일
-📰	새 파일 생성
-🔥	파일 제거
-📚	문서 작성
-
-== 버그
-🐛	버그 리포트
-🚑	버그를 고칠 때
-
-== 기타
-🐎	성능 향상
-✨	새로운 기능 구현
-💡	새로운 아이디어
-🚀	배포
-```
-
-<br/>
 
 ## 커밋 예시
 ```
@@ -251,13 +253,6 @@ LLM 기반 쿼리 파싱 및 검색 전략 자동 선택 기능 개발
 
 <br/>
 <br/>
-
-# 11. 컨벤션 수행 결과
-<img width="100%" alt="코드 컨벤션" src="https://github.com/user-attachments/assets/0dc218c0-369f-45d2-8c6d-cdedc81169b4">
-<img width="100%" alt="깃플로우" src="https://github.com/user-attachments/assets/2a4d1332-acc2-4292-9815-d122f5aea77c">
-
-
-
 
 
 
