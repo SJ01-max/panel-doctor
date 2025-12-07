@@ -62,7 +62,7 @@
 | 이름 | 사진 | 역할 |
 |------|-------|-------|
 | 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>DB 적재 및 구축</li><li>서버 연결</li><li>UI 제작</li><li>LLM 구성 및 통합 구현</li></ul> |
-| 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100"> | <ul><li>DB 적재 및 구축</li><li>서버 연결</li><li>임베딩 처리</li></ul> |
+| 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100"> | <ul><li>DB 적재 및 구축</li><li>벡터 DB 임베딩 구축</li><li>임베딩 작업</li></ul> |
 | 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> | <ul><li>DB 임베딩 작업</li><li>벡터 DB 임베딩 구축</li></ul> |
 | 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | <ul><li>서버 구축</li><li>서버 연결 및 연동</li></ul> |
 | 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | <ul><li>LLM 구성 및 모델 통합 구현</li></ul> |
