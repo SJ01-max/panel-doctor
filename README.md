@@ -76,9 +76,8 @@
 |  |  |
 |-----------------|-----------------|
 | Python    |  <img width="175" height="166" alt="image" src="https://github.com/user-attachments/assets/05bd6018-4c71-41f0-9f94-18ae762dd93e" />
-" alt="Python" width="100">| 
+
 | TypeScript    |  <img width="153" height="142" alt="image" src="https://github.com/user-attachments/assets/6acd1214-d98f-4f6b-9bfa-20909eb6853d" />
-" alt="TypeScript" width="100">|
 
 
 <br/>
@@ -88,7 +87,7 @@
 ## 5.2 Frontend
 |  |  |  |
 |-----------------|-----------------|-----------------|
-| React    |  <img width="145" height="115" alt="image" src="https://github.com/user-attachments/assets/81b7923b-47b8-48b8-8f7d-fc85e9b8708b" /> | alt="React" width="100"> | 19.1.0   |
+| React    |  <img width="145" height="115" alt="image" src="https://github.com/user-attachments/assets/81b7923b-47b8-48b8-8f7d-fc85e9b8708b" /> | 19.1.0   |
 | TypeScript    |  <img src="https://github.com/user-attachments/assets/c9b26078-5d79-40cc-b120-69d9b3882786" alt="TypeScript" width="100">| 5.8.3   |
 | Vite    |  <img src="https://github.com/user-attachments/assets/75a46fa7-ebc0-4a9d-b648-c589f87c4b55" alt="Vite" width="100">    | 7.0.3  |
 | Tailwind CSS    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Tailwind CSS" width="100">    | 3.4.17    |
