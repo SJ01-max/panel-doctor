@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+
+# Node
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build
+frontend/dist/
+frontend/out/
+frontend/.vite/
+panel1.0/frontend/dist/
+panel1.0/frontend/out/
+panel1.0/frontend/.vite/
+
+# Backend
+panel1.0/backend/venv/
+panel1.0/backend/.venv/
+panel1.0/backend/__pycache__/
+panel1.0/backend/**/__pycache__/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
+*.temp
+*.zip
+*.bak
+
+# Auto-generated
+auto-imports.d.ts
+
+# Model cache (large files)
+panel1.0/backend/model_cache/
+
+# Exports (generated files)
+panel1.0/backend/exports/
+panel1.0/backend/exports/*.xlsx
+panel1.0/backend/exports/*.csv
+panel1.0/backend/exports/*.pdf
+
