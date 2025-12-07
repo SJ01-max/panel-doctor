@@ -199,32 +199,7 @@ panel-doctor/
   - 팀원 각자의 개발 브랜치입니다.
   - 모든 기능 개발은 이 브랜치에서 이루어집니다.
 <br/>
-<br/>
 
-
-
-<br/>
-
-
-
-
-
-
-## 커밋 예시
-```
-== ex1
-✨Feat: "자연어 검색 기능 구현"
-
-LLM 기반 쿼리 파싱 및 검색 전략 자동 선택 기능 개발
-
-== ex2
-📚chore: sentence-transformers 라이브러리 설치
-
-임베딩 모델 사용을 위한 sentence-transformers 설치
-```
-
-<br/>
-<br/>
 
 
 
