@@ -86,18 +86,16 @@
 |  |  |  |
 |-----------------|-----------------|-----------------|
 | React    |  <img width="145" height="115" alt="image" src="https://github.com/user-attachments/assets/81b7923b-47b8-48b8-8f7d-fc85e9b8708b" /> | 19.1.0   |
-| TypeScript    |  <img src="https://github.com/user-attachments/assets/c9b26078-5d79-40cc-b120-69d9b3882786" alt="TypeScript" width="100">| 5.8.3   |
-| Vite    |  <img src="https://github.com/user-attachments/assets/75a46fa7-ebc0-4a9d-b648-c589f87c4b55" alt="Vite" width="100">    | 7.0.3  |
-| Tailwind CSS    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Tailwind CSS" width="100">    | 3.4.17    |
-| Recharts    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Recharts" width="100">    | 3.2.0    |
-| Zustand    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Zustand" width="100">    | 5.0.8    |
-| Framer Motion    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Framer Motion" width="100">    | 12.23.24    |
+| TypeScript    |  <img src="https://github.com/user-attachments/assets/6acd1214-d98f-4f6b-9bfa-20909eb6853d" alt="TypeScript" width="100"> | 5.8.3   |
+| Vite    | <img width="133" height="102" alt="image" src="https://github.com/user-attachments/assets/c64ecfd9-3dd9-49c7-ae96-e245bb0fe174" /> | 7.0.3  |
+| Tailwind CSS    | <img width="181" height="147" alt="image" src="https://github.com/user-attachments/assets/862b54b4-0964-4dcb-bfe0-38e368999217" /> | 3.4.17    |
+
 <br/>
 
 ## 5.3 Backend
 |  |  |  |
 |-----------------|-----------------|-----------------|
-| Flask    |  <img src="https://github.com/user-attachments/assets/4937976f-8466-4a71-80c4-7e5bc21d5aff" alt="Flask" width="100">    | 3.0.0+    |
+| Flask    |  <img width="172" height="115" alt="image" src="https://github.com/user-attachments/assets/c923491c-c79b-41f9-916c-1c5b303ef974" /> | 3.0.0+    |
 | PostgreSQL    |  <img src="https://github.com/user-attachments/assets/c245860e-c53e-4595-8d38-3623db5055a7" alt="PostgreSQL" width="100">    | -    |
 | pgvector   |  <img src="https://github.com/user-attachments/assets/ef455654-d04b-4add-b77e-4a2f3fde8182" alt="pgvector" width="100">    | 0.2.0+    |
 | Anthropic Claude API   |  <img src="https://github.com/user-attachments/assets/6598b89f-7e98-4898-96fe-b44b300528d5" alt="Claude" width="100">    | -    |
