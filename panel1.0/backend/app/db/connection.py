@@ -25,9 +25,9 @@ def get_db_connection() -> connection:
             # 연결 풀 생성 (개별 파라미터 사용)
             # 타임아웃을 길게 설정 (원격 연결 시 필요)
             
-            # SSL 모드 설정 (환경변수로 제어 가능, 기본값: prefer)
+            # SSL 모드 설정 (환경변수로 제어 가능, 기본값: require - RDS는 SSL 필수)
             import os
-            ssl_mode = os.environ.get('DB_SSLMODE', 'prefer')  # prefer, require, disable 등
+            ssl_mode = os.environ.get('DB_SSLMODE', 'require')  # require: SSL 필수, prefer: 선택적, disable: 비활성화
             
             print(f"[DEBUG] DB 연결 시도: host={db_config['host']}, port={db_config['port']}, database={db_config['database']}, user={db_config['user']}, sslmode={ssl_mode}")
             
