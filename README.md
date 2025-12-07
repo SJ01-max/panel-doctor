@@ -88,8 +88,7 @@
 ## 5.2 Frontend
 |  |  |  |
 |-----------------|-----------------|-----------------|
-| React    |  <img width="145" height="115" alt="image" src="https://github.com/user-attachments/assets/81b7923b-47b8-48b8-8f7d-fc85e9b8708b" />
- alt="React" width="100"> | 19.1.0   |
+| React    |  <img width="145" height="115" alt="image" src="https://github.com/user-attachments/assets/81b7923b-47b8-48b8-8f7d-fc85e9b8708b" /> | alt="React" width="100"> | 19.1.0   |
 | TypeScript    |  <img src="https://github.com/user-attachments/assets/c9b26078-5d79-40cc-b120-69d9b3882786" alt="TypeScript" width="100">| 5.8.3   |
 | Vite    |  <img src="https://github.com/user-attachments/assets/75a46fa7-ebc0-4a9d-b648-c589f87c4b55" alt="Vite" width="100">    | 7.0.3  |
 | Tailwind CSS    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Tailwind CSS" width="100">    | 3.4.17    |
