@@ -96,12 +96,11 @@
 |  |  |  |
 |-----------------|-----------------|-----------------|
 | Flask    |  <img width="172" height="115" alt="image" src="https://github.com/user-attachments/assets/c923491c-c79b-41f9-916c-1c5b303ef974" /> | 3.0.0+    |
-| PostgreSQL    |  <img src="https://github.com/user-attachments/assets/c245860e-c53e-4595-8d38-3623db5055a7" alt="PostgreSQL" width="100">    | -    |
-| pgvector   |  <img src="https://github.com/user-attachments/assets/ef455654-d04b-4add-b77e-4a2f3fde8182" alt="pgvector" width="100">    | 0.2.0+    |
-| Anthropic Claude API   |  <img src="https://github.com/user-attachments/assets/6598b89f-7e98-4898-96fe-b44b300528d5" alt="Claude" width="100">    | -    |
-| Sentence-Transformers    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="Sentence-Transformers" width="100">    | 2.2.0+    |
-| PyTorch    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="PyTorch" width="100">    | 2.0.0+    |
-| TensorFlow    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="TensorFlow" width="100">    | 2.13.0+    |
+| PostgreSQL    |  <img width="142" height="143" alt="image" src="https://github.com/user-attachments/assets/a6d4855e-fd7a-49ca-9107-a1db6075645b" /> | -    |
+| pgvector   |  <img width="140" height="149" alt="image" src="https://github.com/user-attachments/assets/3ed40b18-d00d-4ed3-be6a-f7a9ac61c32c" /> | 0.2.0+    |
+| Anthropic Claude API   | <img width="149" height="151" alt="image" src="https://github.com/user-attachments/assets/4cfa7e1d-04ea-4717-abd2-1aa6b564abdc" /> | -    |
+| PyTorch    |  <img width="135" height="148" alt="image" src="https://github.com/user-attachments/assets/ace797f7-6a4b-4929-b7dc-7d69d8aac9c1" />  | 2.0.0+    |
+| TensorFlow    | <img width="236" height="160" alt="image" src="https://github.com/user-attachments/assets/18475a42-b06e-45e0-b4c5-fc6f72739918" /> | 2.13.0+    |
 
 <br/>
 
@@ -109,7 +108,7 @@
 |  |  |
 |-----------------|-----------------|
 | Git    |  <img src="https://github.com/user-attachments/assets/483abc38-ed4d-487c-b43a-3963b33430e6" alt="git" width="100">    |
-| Figma    |  <img src="https://github.com/user-attachments/assets/00eca926-8fb1-46ce-86e8-35119c519ce0" alt="figma" width="100">    |
+| Figma    |  <img width="130" height="136" alt="image" src="https://github.com/user-attachments/assets/417a7580-21ce-40c2-96c7-6e54fcaa8cbf" /> |
 | Notion    |  <img src="https://github.com/user-attachments/assets/34141eb9-deca-416a-a83f-ff9543cc2f9a" alt="Notion" width="100">    |
 
 
