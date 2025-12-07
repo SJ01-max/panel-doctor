@@ -1,227 +1,428 @@
+
 # 0. Getting Started (시작하기)
 ```bash
 백엔드(Flask): python main.py  
 프론트엔드(React + Vite): npm run dev
 
-<br/><br/>
-1. Project Overview (프로젝트 개요)
+```
 
-프로젝트 이름: Panel Doctor
 
-프로젝트 설명:
-Panel Doctor는 자연어 기반 패널 분석 시스템으로, 사용자가 입력한 질의를 LLM이 의미적으로 해석하여
-SQL 기반 검색과 임베딩 기반 유사도 검색을 결합해 가장 유사한 패널을 추출합니다.
+<br/>
+<br/>
+
+# 1. Project Overview (프로젝트 개요)
+- 프로젝트 이름: Panel System
+- 프로젝트 설명: Panel Doctor는 자연어 기반 패널 분석 시스템으로, 사용자가 입력한 질의를 LLM이 의미적으로 해석하여 SQL 기반 검색과 임베딩 기반 유사도 검색을 결합해 가장 유사한 패널을 추출합니다.
 또한 분포 분석, 패턴 분석, 핵심 키워드 등을 대시보드로 시각화하여 제공하는 AI 분석 플랫폼입니다.
 
-<br/><br/>
-
-2. Team Members (팀원 및 팀 소개)
-허성재(팀장)	김우준	김완진	김종욱	최석진	홍재민
-<img src="https://github.com/user-attachments/assets/beea8c64-19de-4d91-955f-ed24b813a638" width="150">	<img src="https://github.com/user-attachments/assets/placeholder1" width="150">	<img src="https://github.com/user-attachments/assets/placeholder2" width="150">	<img src="https://github.com/user-attachments/assets/placeholder3" width="150">	<img src="https://github.com/user-attachments/assets/placeholder4" width="150">	<img src="https://github.com/user-attachments/assets/placeholder5" width="150">
-FE / 전체 총괄	DB	AI/LLM	임베딩	FE	서버/데이터
-GitHub
-	GitHub	GitHub	GitHub	GitHub	GitHub
-
-<br/><br/>
-
-3. Key Features (주요 기능)
-
-자연어 기반 패널 검색
-
-사용자의 자연어 질의를 LLM이 구조화·분류하여 적절한 검색 방식(SQL/semantic)을 자동 적용합니다.
-
-의미 기반 임베딩 검색
-
-bge-m3-ko, KURE-v1 등 최신 임베딩 모델 사용
-
-pgvector 기반 유사도 검색 지원
-
-패널 분포 대시보드
-
-연령/성별/지역 기반 분포 및 전체 데이터 대비 비율 분석 제공
-
-패턴 분석 & 키워드 탐색
-
-LLM이 패널들의 공통 특징을 분석하여 자연어 형태로 설명
-
-주요 키워드 TOP7 자동 산출
-
-SQL 안전 실행
-
-SELECT/WITH만 허용하며 timeout 및 파라미터 바인딩 적용
-
-실시간 웹 UI
-
-검색 → 분석 → 결과까지 모든 기능을 웹에서 실시간 제공
-
-<br/><br/>
-
-4. Tasks & Responsibilities (작업 및 역할 분담)
-팀원	사진	역할
-허성재(팀장)	<img src="https://github.com/user-attachments/assets/beea8c64-19de-4d91-955f-ed24b813a638" width="100">	전체 아키텍처 총괄, UI/UX 개발, 대시보드 구현
-김우준	<img src="https://github.com/user-attachments/assets/placeholder1" width="100">	DB 스키마 구성, 데이터 정제, ETL 구축
-김완진	<img src="https://github.com/user-attachments/assets/placeholder2" width="100">	LLM Prompt 설계, 질의 분류 모델 구현
-김종욱	<img src="https://github.com/user-attachments/assets/placeholder3" width="100">	임베딩 파이프라인 구축, 벡터DB 최적화
-최석진	<img src="https://github.com/user-attachments/assets/placeholder4" width="100">	프론트엔드 기능 개발, 검색 UI 개선
-홍재민	<img src="https://github.com/user-attachments/assets/placeholder5" width="100">	서버 API 개발, 데이터 핸들링, 배포 지원
 <br/>
-5. Technology Stack (기술 스택)
-5.1 Language
-언어	아이콘
-Python	🐍
-TypeScript	🟦
 <br/>
-5.2 Frontend
-기술	아이콘	설명
-React	⚛️	UI 컴포넌트 기반 프레임워크
-Vite	⚡	초고속 프론트엔드 빌드 도구
-TailwindCSS	🎨	유틸리티 기반 CSS 프레임워크
-Recharts	📊	차트 기반 데이터 시각화
-<br/>
-5.3 Backend
-기술	아이콘	버전
-Flask	🔥	^3.x
-PostgreSQL	🐘	15.x
-pgvector	🔢	최신
-Claude API	🤖	sonnet-4.5
-<br/>
-5.4 Cooperation
-도구	아이콘
-Git	🧬
-Notion	📒
-Figma	🎨
-<br/>
-6. API 명세서
-<p> <img src="https://github.com/user-attachments/assets/893fc270-6a96-499f-b456-3f9e5b481120" alt="API 기본 명세서 예시" width="600" /> </p>
 
-API 문서는 팀 내부 Notion에서 관리합니다.
+# 2. Team Members (팀원 및 팀 소개)
+| 허성재 | 김우준 | 김완진 | 김종욱 | 최석진 | 홍재민 |
+|:------:|:------:|:------:|:------:|
+| <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="150"> |
+| BE/FE/전체총괄 | BE | BE | BE | BE | FE |
 
-<br/><br/>
+<br/>
+<br/>
 
-6. Project Structure (프로젝트 구조)
+# 3. Key Features (주요 기능)
+- **자연어 기반 패널 검색**:
+  - 사용자가 자연어로 질의하면 LLM이 자동으로 최적의 검색 전략을 선택하여 실행합니다.
+  - 예시: "서울 20대 남자 100명", "운동 좋아하는 30대 여성"
+
+- **하이브리드 검색 시스템**:
+  - Filter First: 구조화된 필터 기반 검색 (SQL, 빠른 응답)
+  - Semantic First: 의미 기반 벡터 검색 (정확한 의미 매칭)
+  - Hybrid: 구조화된 필터 + 벡터 검색 결합 (최고 성능)
+
+- **핵심 키워드 추출 및 분석**:
+  - 검색된 패널 그룹의 응답을 분석하여 핵심 키워드를 자동 추출합니다.
+  - 임베딩 기반 키워드 추출 (TF-IDF) 및 키워드 통계 분석
+  - 키워드 간 연관성 분석 (강한/중간/독립 키워드)을 통해 인사이트를 제공합니다.
+
+- **타겟 그룹 관리**:
+  - 타겟 그룹 생성, 수정, 삭제 기능
+  - 패널 수 추정 및 AI 기반 타겟 그룹 추천
+
+- **데이터 시각화**:
+  - 검색 결과를 대시보드로 시각화 (차트, 통계, 분포 분석)
+  - 연령대별/성별별/지역별 분포 분석
+
+- **데이터 내보내기**:
+  - 검색 결과를 CSV, Excel, PDF 형식으로 내보내기
+  - 내보내기 이력 관리
+
+<br/>
+<br/>
+
+# 4. Tasks & Responsibilities (작업 및 역할 분담)
+|  |  |  |
+|-----------------|-----------------|-----------------|
+| 허성재    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>프로젝트 전체 총괄</li><li>백엔드/프론트엔드 아키텍처 설계</li><li>검색 서비스 및 전략 패턴 구현</li><li>LLM 통합 및 프롬프트 엔지니어링</li></ul>     |
+| 김우준   |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100">| <ul><li>백엔드 API 개발</li><li>벡터 검색 서비스 구현</li><li>데이터베이스 최적화</li></ul> |
+| 김완진   |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100">    |<ul><li>백엔드 서비스 레이어 개발</li><li>타겟 그룹 관리 기능 구현</li><li>데이터 내보내기 기능 구현</li></ul>  |
+| 김종욱    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100">    | <ul><li>백엔드 데이터 접근 계층 구현</li><li>SQL 빌더 및 쿼리 최적화</li><li>ETL 스크립트 개발</li></ul>    |
+| 최석진    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100">    | <ul><li>백엔드 API 엔드포인트 개발</li><li>데이터 소스 관리 기능 구현</li><li>시스템 모니터링 및 로깅</li></ul>    |
+| 홍재민    |  <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100">    | <ul><li>프론트엔드 UI/UX 개발</li><li>검색 페이지 및 대시보드 구현</li><li>데이터 시각화 컴포넌트 개발</li><li>반응형 디자인 구현</li></ul>    |
+
+<br/>
+
+# 5. Technology Stack (기술 스택)
+## 5.1 Language
+|  |  |
+|-----------------|-----------------|
+| Python    |   <img src="https://github.com/user-attachments/assets/60140ded-2ac1-41d7-9db2-ae26fc9de43a" alt="Python" width="100">| 
+| TypeScript    |   <img src="https://github.com/user-attachments/assets/cdd511f1-7bc1-494f-94da-906ac82dbc5c" alt="TypeScript" width="100">|
+
+
+<br/>
+
+
+## 5.2 Frotend
+## 5.2 Frontend
+|  |  |  |
+|-----------------|-----------------|-----------------|
+| React    |  <img src="https://github.com/user-attachments/assets/e3b49dbb-9804-acf9-012c854a2fd2" alt="React" width="100"> | 19.1.0   |
+| TypeScript    |  <img src="https://github.com/user-attachments/assets/c9b26078-5d79-40cc-b120-69d9b3882786" alt="TypeScript" width="100">| 5.8.3   |
+| Vite    |  <img src="https://github.com/user-attachments/assets/75a46fa7-ebc0-4a9d-b648-c589f87c4b55" alt="Vite" width="100">    | 7.0.3  |
+| Tailwind CSS    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Tailwind CSS" width="100">    | 3.4.17    |
+| Recharts    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Recharts" width="100">    | 3.2.0    |
+| Zustand    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Zustand" width="100">    | 5.0.8    |
+| Framer Motion    |  <img src="https://github.com/user-attachments/assets/3632d7d6-8d43-4dd5-ba7a-501a2bc3a3e4" alt="Framer Motion" width="100">    | 12.23.24    |
+<br/>
+
+## 5.3 Backend
+|  |  |  |
+|-----------------|-----------------|-----------------|
+| Flask    |  <img src="https://github.com/user-attachments/assets/4937976f-8466-4a71-80c4-7e5bc21d5aff" alt="Flask" width="100">    | 3.0.0+    |
+| PostgreSQL    |  <img src="https://github.com/user-attachments/assets/c245860e-c53e-4595-8d38-3623db5055a7" alt="PostgreSQL" width="100">    | -    |
+| pgvector   |  <img src="https://github.com/user-attachments/assets/ef455654-d04b-4add-b77e-4a2f3fde8182" alt="pgvector" width="100">    | 0.2.0+    |
+| Anthropic Claude API   |  <img src="https://github.com/user-attachments/assets/6598b89f-7e98-4898-96fe-b44b300528d5" alt="Claude" width="100">    | -    |
+| Sentence-Transformers    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="Sentence-Transformers" width="100">    | 2.2.0+    |
+| PyTorch    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="PyTorch" width="100">    | 2.0.0+    |
+| TensorFlow    |  <img src="https://github.com/user-attachments/assets/4c690fd4-721b-4303-af31-aa4dbcc641ea" alt="TensorFlow" width="100">    | 2.13.0+    |
+
+<br/>
+
+## 5.4 Cooperation
+|  |  |
+|-----------------|-----------------|
+| Git    |  <img src="https://github.com/user-attachments/assets/483abc38-ed4d-487c-b43a-3963b33430e6" alt="git" width="100">    |
+| Figma    |  <img src="https://github.com/user-attachments/assets/00eca926-8fb1-46ce-86e8-35119c519ce0" alt="figma" width="100">    |
+| Notion    |  <img src="https://github.com/user-attachments/assets/34141eb9-deca-416a-a83f-ff9543cc2f9a" alt="Notion" width="100">    |
+
+
+<br/>
+
+# 6. API 명세서
+
+## 주요 API 엔드포인트
+
+### 검색 API
+- `POST /api/search` - 통합 검색 (자연어 질의)
+- `POST /api/semantic-search` - 시맨틱 검색 (의미 기반 벡터 검색)
+
+### LLM API
+- `POST /api/llm/ask` - LLM 질의응답
+- `POST /api/llm/sql_search` - SQL 검색 (대화 히스토리 지원)
+- `GET /api/llm/models` - 사용 가능한 모델 목록
+
+### 패널 API
+- `GET /api/panel/dashboard` - 대시보드 데이터
+
+### 타겟 그룹 API
+- `GET /api/target-groups` - 타겟 그룹 목록
+- `POST /api/target-groups` - 타겟 그룹 생성
+- `PUT /api/target-groups/:id` - 타겟 그룹 수정
+- `DELETE /api/target-groups/:id` - 타겟 그룹 삭제
+
+### 내보내기 API
+- `GET /api/exports` - 내보내기 이력
+- `POST /api/exports` - 파일 생성 요청
+- `GET /api/exports/:id/download` - 파일 다운로드
+
+  
+# 7. Project Structure (프로젝트 구조)
+```plaintext
 panel-doctor/
-├── README.md
-├── PROJECT_LOGIC.md
-├── PROJECT_STRUCTURE.md
-│
 ├── panel1.0/
-│   ├── backend/
+│   ├── backend/                    # Flask 백엔드
 │   │   ├── app/
-│   │   │   ├── routes/          # SQL/semantic search API
-│   │   │   ├── services/        # LLM, embedding, search logic
-│   │   │   ├── db/              # DB connection layer
-│   │   │   └── utils/
-│   │   ├── scripts/             # ETL, embedding, benchmarking
-│   │   ├── tests/
-│   │   ├── main.py
-│   │   └── requirements.txt
+│   │   │   ├── __init__.py        # Flask 앱 팩토리
+│   │   │   ├── config.py          # 설정 파일
+│   │   │   ├── routes/            # API 라우트
+│   │   │   │   ├── search.py      # 통합 검색 API
+│   │   │   │   ├── llm_routes.py  # LLM API
+│   │   │   │   └── ...
+│   │   │   ├── services/          # 비즈니스 로직
+│   │   │   │   ├── search/        # 검색 서비스 (전략 패턴)
+│   │   │   │   ├── llm/           # LLM 서비스
+│   │   │   │   └── data/          # 데이터 접근 계층
+│   │   │   └── db/                # 데이터베이스 연결
+│   │   ├── main.py                # 서버 진입점
+│   │   └── requirements.txt       # Python 의존성
 │   │
-│   └── frontend/
+│   └── frontend/                   # React 프론트엔드
 │       ├── src/
-│       │   ├── api/
-│       │   ├── components/
-│       │   ├── pages/
-│       │   ├── features/
-│       │   └── router/
-│       ├── package.json
-│       ├── vite.config.js
-│       └── tailwind.config.cjs
+│       │   ├── pages/             # 페이지 컴포넌트
+│       │   │   ├── search/        # 검색 페이지
+│       │   │   ├── dashboard/      # 대시보드 페이지
+│       │   │   ├── target-groups/  # 타겟 그룹 페이지
+│       │   │   └── ...
+│       │   ├── components/        # 재사용 컴포넌트
+│       │   ├── features/          # 기능별 모듈
+│       │   │   ├── panel/         # 패널 검색 기능
+│       │   │   └── target-group/  # 타겟 그룹 기능
+│       │   ├── api/               # API 클라이언트
+│       │   ├── router/            # 라우팅 설정
+│       │   └── types/             # TypeScript 타입
+│       ├── package.json           # Node.js 의존성
+│       └── vite.config.js         # Vite 설정
 │
-└── .gitignore
+├── PROJECT_STRUCTURE.md           # 프로젝트 구조 상세 문서
+├── PROJECT_LOGIC.md               # 프로젝트 로직 문서
+└── README.md                      # 프로젝트 개요
+```
+
+<br/>
+<br/>
+
+# 8. Development Workflow (개발 워크플로우)
+## 브랜치 전략 (Branch Strategy)
+우리의 브랜치 전략은 Git Flow를 기반으로 하며, 다음과 같은 브랜치를 사용합니다.
+
+- **Main Branch**
+  - 배포 가능한 상태의 코드를 유지합니다.
+  - 모든 배포는 이 브랜치에서 이루어집니다.
+  
+- **{test} Branch**
+  - 팀원 각자의 개발 브랜치입니다.
+  - 모든 기능 개발은 이 브랜치에서 이루어집니다.
+<br/>
+<br/>
+
+# 9. Coding Convention
+## 문장 종료
+```python
+# Python: PEP 8 스타일 가이드 준수
+def search_panel(query: str) -> List[Dict]:
+    """패널 검색 함수"""
+    pass
+```
+
+```typescript
+// TypeScript: 세미콜론(;) 사용
+const searchPanel = (query: string): Panel[] => {
+  return [];
+};
+```
+
+<br/>
 
 
-<br/><br/>
+## 명명 규칙
+### Python (Backend)
+* 상수 : 영문 대문자 + 스네이크 케이스
+```python
+MAX_RESULTS = 100
+DEFAULT_LIMIT = 10
+```
 
-7. Development Workflow (개발 워크플로우)
-브랜치 전략 (Git Flow 기반)
+* 변수 & 함수 : 스네이크 케이스
+```python
+# 변수
+search_result = []
+user_query = ""
 
-Main Branch
+# 함수
+def search_panel():
+    pass
 
-배포 가능한 코드 보관
+# 클래스: 파스칼 케이스
+class SearchService:
+    pass
+```
 
-최종 안정 버전 유지
+### TypeScript (Frontend)
+* 상수 : 영문 대문자 + 스네이크 케이스
+```typescript
+const MAX_RESULTS = 100;
+```
 
-{name} Branch
+* 변수 & 함수 : 카멜케이스
+```typescript
+// state
+const [isLoading, setIsLoading] = useState(false);
+const [searchQuery, setSearchQuery] = useState('');
 
-팀원별 기능 개발 브랜치
+// 배열 - 복수형 이름 사용
+const panels: Panel[] = [];
 
-모든 개발은 개인 브랜치에서 진행 후 main으로 Merge
+// 이벤트 핸들러: 'on'으로 시작
+const onClick = () => {};
+const onChange = () => {};
 
-<br/><br/>
+// 반환 값이 불린인 경우: 'is'로 시작
+const isLoading = false;
 
-8. Coding Convention
-문장 종료
-console.log("Hello World!");
-
-명명 규칙
-
-상수 → UPPER_SNAKE_CASE
-
-변수 & 함수 → camelCase
-
-컴포넌트 → PascalCase
-
-boolean → isLoading, isValid
-
-예시
+// Fetch함수: method(get, post, put, del)로 시작
 const getPanelList = () => {...}
-const onClickButton = () => {}
+```
 
-블록 구문
-if (true) {
-  return "hello";
+<br/>
+
+## 블록 구문
+```python
+# Python: 한 줄짜리 블록일 경우라도 명확히 작성
+if condition:
+    return result
+```
+
+```typescript
+// TypeScript: 한 줄짜리 블록일 경우라도 {}를 생략하지 않고, 명확히 줄 바꿈 하여 사용한다
+// good
+if (condition) {
+  return result;
 }
 
-함수
-const fetchPanels = () => {};
+// bad
+if (condition) return result;
+```
 
-styled-components 네이밍
+
+<br/>
+
+## 함수
+### Python
+```python
+# 함수는 함수 정의를 사용
+def function_name():
+    pass
+```
+
+### TypeScript
+```typescript
+// 함수는 함수 표현식을 사용하며, 화살표 함수를 사용한다.
+// Good
+const fnName = () => {};
+
+// Bad
+function fnName() {};
+```
+
+<br/>
+
+## 태그 네이밍
+Styled-component태그 생성 시 아래 네이밍 규칙을 준수하여 의미 전달을 명확하게 한다.<br/>
+태그명이 길어지더라도 의미 전달의 명확성에 목적을 두어 작성한다.<br/>
+전체 영역: Container<br/>
+영역의 묶음: {Name}Area<br/>
+의미없는 태그: <><br/>
+```
 <Container>
-  <SectionArea>
-    <Item>...</Item>
-  </SectionArea>
+  <ContentsArea>
+    <Contents>...</Contents>
+    <Contents>...</Contents>
+  </ContentsArea>
 </Container>
+```
 
-폴더 네이밍
+<br/>
+
+## 폴더 네이밍
+카멜 케이스를 기본으로 하며, 컴포넌트 폴더일 경우에만 파스칼 케이스로 사용한다.
+```
+// 카멜 케이스
 camelCase
-PascalCase (컴포넌트 전용)
+// 파스칼 케이스
+PascalCase
+```
 
-파일 네이밍
-컴포넌트: .jsx  
-일반 로직: .js  
-customHook: use + Name
+<br/>
+
+## 파일 네이밍
+```
+컴포넌트일 경우만 .jsx 확장자를 사용한다. (그 외에는 .js)
+customHook을 사용하는 경우 : use + 함수명
+```
+
+<br/>
+<br/>
+
+# 9. 커밋 컨벤션
+## 기본 구조
+```
+type : subject
+
+body 
+```
+
+<br/>
+
+## type 종류
+```
+feat : 새로운 기능 추가
+fix : 버그 수정
+docs : 문서 수정
+style : 코드 포맷팅, 세미콜론 누락, 코드 변경이 없는 경우
+refactor : 코드 리펙토링
+test : 테스트 코드, 리펙토링 테스트 코드 추가
+chore : 빌드 업무 수정, 패키지 매니저 수정
+```
+
+<br/>
+
+## 커밋 이모지
+```
+== 코드 관련
+📝	코드 작성
+🔥	코드 제거
+🔨	코드 리팩토링
+💄	UI / style 변경
+
+== 문서&파일
+📰	새 파일 생성
+🔥	파일 제거
+📚	문서 작성
+
+== 버그
+🐛	버그 리포트
+🚑	버그를 고칠 때
+
+== 기타
+🐎	성능 향상
+✨	새로운 기능 구현
+💡	새로운 아이디어
+🚀	배포
+```
+
+<br/>
+
+## 커밋 예시
+```
+== ex1
+✨Feat: "자연어 검색 기능 구현"
+
+LLM 기반 쿼리 파싱 및 검색 전략 자동 선택 기능 개발
+
+== ex2
+📚chore: sentence-transformers 라이브러리 설치
+
+임베딩 모델 사용을 위한 sentence-transformers 설치
+```
+
+<br/>
+<br/>
+
+# 11. 컨벤션 수행 결과
+<img width="100%" alt="코드 컨벤션" src="https://github.com/user-attachments/assets/0dc218c0-369f-45d2-8c6d-cdedc81169b4">
+<img width="100%" alt="깃플로우" src="https://github.com/user-attachments/assets/2a4d1332-acc2-4292-9815-d122f5aea77c">
 
 
-<br/><br/>
-
-9. Commit Convention
-기본 구조
-type: subject
-
-body
-
-Type 종류
-feat, fix, docs, style, refactor, test, chore
-
-이모지 규칙
-✨ 신규 기능
-🐛 버그
-📝 코드 수정
-📚 문서
-🔥 제거
-🚀 배포
-
-Commit Example
-✨ feat: "자연어 질의 분석 기능 추가"
-- LLM 기반 질의 분류 기능 구현
 
 
-<br/><br/>
 
-10. 컨벤션 수행 결과
 
-(코드 컨벤션 스크린샷, Git Flow 스크린샷 첨부)
 
-📄 LICENSE
-
-본 프로젝트는 교육 및 연구 목적의 비상업적 프로젝트입니다.
