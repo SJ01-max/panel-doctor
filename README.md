@@ -73,12 +73,10 @@
 
 # 5. Technology Stack (기술 스택)
 ## 5.1 Language
-|  |  |
-|-----------------|-----------------|
-| Python    |  <img width="175" height="166" alt="image" src="https://github.com/user-attachments/assets/05bd6018-4c71-41f0-9f94-18ae762dd93e" />
-
-| TypeScript    |  <img width="153" height="142" alt="image" src="https://github.com/user-attachments/assets/6acd1214-d98f-4f6b-9bfa-20909eb6853d" />
-
+| 언어 | 아이콘 |
+|------|--------|
+| Python | <img width="175" height="166" alt="Python" src="https://github.com/user-attachments/assets/05bd6018-4c71-41f0-9f94-18ae762dd93e" /> |
+| TypeScript | <img width="153" height="142" alt="TypeScript" src="https://github.com/user-attachments/assets/6acd1214-d98f-4f6b-9bfa-20909eb6853d" /> |
 
 <br/>
 
