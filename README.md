@@ -59,39 +59,7 @@
 
 # 4. Tasks & Responsibilities (작업 및 역할 분담)
 |  |  |  |
-|-----------------|-----------------|-----------------|
-| 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | 
-<ul>
-<li>DB 적재 및 구축</li>
-<li>서버 연결</li>
-<li>UI 제작</li>
-<li>LLM 구성 및 통합 구현</li>
-</ul> |
-| 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100"> | 
-<ul>
-<li>DB 적재 및 구축</li>
-<li>서버 연결</li>
-<li>임베딩 처리</li>
-</ul> |
-| 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> | 
-<ul>
-<li>DB 임베딩 작업</li>
-<li>벡터 DB 임베딩 구축</li>
-</ul> |
-| 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | 
-<ul>
-<li>서버 구축</li>
-<li>서버 연결 및 연동</li>
-</ul> |
-| 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | 
-<ul>
-<li>LLM 구성 및 모델 통합 구현</li>
-</ul> |
-| 홍재민 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100"> | 
-<ul>
-<li>프론트엔드 개발</li>
-</ul> |
-
+| 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>프로젝트 전체 총괄</li><li>백엔드/프론트엔드 아키텍처 설계</li><li>검색 서비스 및 전략 패턴 구현</li><li>LLM 통합 및 프롬프트 엔지니어링</li></ul> | | 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100">| <ul><li>백엔드 API 개발</li><li>벡터 검색 서비스 구현</li><li>데이터베이스 최적화</li><li>임베딩 모델 개발</li></ul> | | 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> |<ul><li>임베딩 모델 개발</li></ul> | | 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | <ul><li>서버 구축 및 연결</li></ul> | | 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | <ul><li>LLM 연동 및 구축</ul> | | 홍재민 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100"> | <ul><li>프론트엔드</ul> |
 
 <br/>
 
