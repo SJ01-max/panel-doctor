@@ -58,7 +58,7 @@
 <br/>
 
 # 4. Tasks & Responsibilities (작업 및 역할 분담)
-|  |  |  |
+|  |  |  |  |  | 
 | 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>프로젝트 전체 총괄</li><li>백엔드/프론트엔드 아키텍처 설계</li><li>검색 서비스 및 전략 패턴 구현</li><li>LLM 통합 및 프롬프트 엔지니어링</li></ul> | | 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100">| <ul><li>백엔드 API 개발</li><li>벡터 검색 서비스 구현</li><li>데이터베이스 최적화</li><li>임베딩 모델 개발</li></ul> | | 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> |<ul><li>임베딩 모델 개발</li></ul> | | 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | <ul><li>서버 구축 및 연결</li></ul> | | 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | <ul><li>LLM 연동 및 구축</ul> | | 홍재민 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100"> | <ul><li>프론트엔드</ul> |
 
 <br/>
@@ -67,8 +67,10 @@
 ## 5.1 Language
 |  |  |
 |-----------------|-----------------|
-| Python    |   <img src="https://github.com/user-attachments/assets/60140ded-2ac1-41d7-9db2-ae26fc9de43a" alt="Python" width="100">| 
-| TypeScript    |   <img src="https://github.com/user-attachments/assets/cdd511f1-7bc1-494f-94da-906ac82dbc5c" alt="TypeScript" width="100">|
+| Python    |   <img src="<img width="175" height="166" alt="image" src="https://github.com/user-attachments/assets/05bd6018-4c71-41f0-9f94-18ae762dd93e" />
+" alt="Python" width="100">| 
+| TypeScript    |   <img src="<img width="153" height="142" alt="image" src="https://github.com/user-attachments/assets/6acd1214-d98f-4f6b-9bfa-20909eb6853d" />
+" alt="TypeScript" width="100">|
 
 
 <br/>
