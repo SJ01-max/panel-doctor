@@ -12,7 +12,7 @@
 
 # 1. Project Overview (프로젝트 개요)
 - 프로젝트 이름: Panel System
-- 프로젝트 설명: Panel Doctor는 자연어 기반 패널 분석 시스템으로, 사용자가 입력한 질의를 LLM이 의미적으로 해석하여 SQL 기반 검색과 임베딩 기반 유사도 검색을 결합해 가장 유사한 패널을 추출합니다.
+- 프로젝트 설명: Panel System는 자연어 기반 패널 분석 시스템으로, 사용자가 입력한 질의를 LLM이 의미적으로 해석하여 SQL 기반 검색과 임베딩 기반 유사도 검색을 결합해 가장 유사한 패널을 추출합니다.
 또한 분포 분석, 패턴 분석, 핵심 키워드 등을 대시보드로 시각화하여 제공하는 AI 분석 플랫폼입니다.
 
 <br/>
@@ -21,8 +21,9 @@
 # 2. Team Members (팀원 및 팀 소개)
 | 허성재 | 김우준 | 김완진 | 김종욱 | 최석진 | 홍재민 |
 |:------:|:------:|:------:|:------:|:------:|:------:|
-| <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="150"> |
+| <img width="174" height="172" alt="image" src="https://github.com/user-attachments/assets/6ec6cc48-c860-4100-ba3f-94c01987ea5b" /> | <img width="194" height="161" alt="image" src="https://github.com/user-attachments/assets/1e83276f-4e3b-4eea-a1e1-c7979a187f09" /> | <img width="161" height="135" alt="image" src="https://github.com/user-attachments/assets/bd2d694e-7f27-428e-8bf4-49145e1495af" />  | <img width="182" height="161" alt="image" src="https://github.com/user-attachments/assets/96c7463e-6be5-47b0-b550-ef6578670ac3" /> | <img width="151" height="134" alt="image" src="https://github.com/user-attachments/assets/97334052-5cb8-4a66-b0b1-b2b606e13dca" /> | <img width="208" height="158" alt="image" src="https://github.com/user-attachments/assets/8a58e956-3931-4dcf-b6ac-78c06924235d" />|
 | BE/FE/전체총괄 | BE | BE | BE | BE | FE |
+
 
 <br/>
 <br/>
@@ -61,12 +62,12 @@
 
 | 이름 | 사진 | 역할 |
 |------|-------|-------|
-| 허성재 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="허성재" width="100"> | <ul><li>DB 적재 및 구축</li><li>서버 연결</li><li>UI 제작</li><li>LLM 구성 및 통합 구현</li></ul> |
-| 김우준 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="100"> | <ul><li>DB 적재 및 구축</li><li>서버 연결</li><li>임베딩 처리</li></ul> |
-| 김완진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="100"> | <ul><li>DB 임베딩 작업</li><li>벡터 DB 임베딩 구축</li></ul> |
-| 김종욱 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="100"> | <ul><li>서버 구축</li><li>서버 연결 및 연동</li></ul> |
-| 최석진 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="100"> | <ul><li>LLM 구성 및 모델 통합 구현</li></ul> |
-| 홍재민 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="100"> | <ul><li>프론트엔드 개발</li></ul> |
+| 허성재 | <img src="https://github.com/user-attachments/assets/6ec6cc48-c860-4100-ba3f-94c01987ea5b" alt="허성재" width="100"> | <ul><li>프로젝트 총괄</li><li>DB 적재 및 구축</li><li>UI UX 제작</li><li>LLM 구성 및 통합 구현</li></ul> |
+| 김우준 | <img src="https://github.com/user-attachments/assets/1e83276f-4e3b-4eea-a1e1-c7979a187f09" alt="김우준" width="100"> | <ul><li>DB 적재 및 구축</li><li>DB 임베딩 작업</li><li>벡터 DB 임베딩 구축</li></ul> |
+| 김완진 | <img src="https://github.com/user-attachments/assets/bd2d694e-7f27-428e-8bf4-49145e1495af" alt="김완진" width="100"> | <ul><li>DB 임베딩 작업</li><li>벡터 DB 임베딩 구축</li></ul> |
+| 김종욱 | <img src="https://github.com/user-attachments/assets/96c7463e-6be5-47b0-b550-ef6578670ac3" alt="김종욱" width="100"> | <ul><li>서버 구축</li><li>서버 연결 및 연동</li></ul> |
+| 최석진 | <img src="https://github.com/user-attachments/assets/97334052-5cb8-4a66-b0b1-b2b606e13dca" alt="최석진" width="100"> | <ul><li>LLM 구성 및 모델 통합 구현</li></ul> |
+| 홍재민 | <img src="https://github.com/user-attachments/assets/8a58e956-3931-4dcf-b6ac-78c06924235d" alt="홍재민" width="100"> | <ul><li>프론트엔드 개발</li></ul> |
 
 
 <br/>
