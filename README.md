@@ -21,7 +21,7 @@
 # 2. Team Members (팀원 및 팀 소개)
 | 허성재 | 김우준 | 김완진 | 김종욱 | 최석진 | 홍재민 |
 |:------:|:------:|:------:|:------:|:------:|:------:|
-| <img width="174" height="172" alt="image" src="https://github.com/user-attachments/assets/6ec6cc48-c860-4100-ba3f-94c01987ea5b" /> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김우준" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김완진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="김종욱" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="최석진" width="150"> | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="홍재민" width="150"> |
+| <img width="174" height="172" alt="image" src="https://github.com/user-attachments/assets/6ec6cc48-c860-4100-ba3f-94c01987ea5b" /> | <img width="194" height="161" alt="image" src="https://github.com/user-attachments/assets/1e83276f-4e3b-4eea-a1e1-c7979a187f09" /> | <img width="161" height="135" alt="image" src="https://github.com/user-attachments/assets/bd2d694e-7f27-428e-8bf4-49145e1495af" />  | <img width="182" height="161" alt="image" src="https://github.com/user-attachments/assets/96c7463e-6be5-47b0-b550-ef6578670ac3" /> | <img width="151" height="134" alt="image" src="https://github.com/user-attachments/assets/97334052-5cb8-4a66-b0b1-b2b606e13dca" /> | <img width="208" height="158" alt="image" src="https://github.com/user-attachments/assets/8a58e956-3931-4dcf-b6ac-78c06924235d" />|
 | BE/FE/전체총괄 | BE | BE | BE | BE | FE |
 
 
